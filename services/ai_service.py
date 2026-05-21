@@ -1,13 +1,17 @@
 import time
 import requests
 import json
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ==========================================
 # API 相關設定
 # ==========================================
-NEW_API_KEY = "sk-15792e507fa044594bb0670f0469c77188821b8bc139e5dd"
-BASE_URL = "https://air.cgu.edu.tw/cgullmapi/v1"
-CHAT_MODEL = "gpt-oss:20b" # 🎯 修正 1：改回學校專用的文字模型，這樣總結跟逐字稿才能正常運作
+NEW_API_KEY = os.getenv("AI_SERVICE_API_KEY")
+BASE_URL = os.getenv("BASE_URL") 
+CHAT_MODEL = "gpt-oss:20b"
 CHAT_ENDPOINT = f"{BASE_URL}/chat/completions"
 
 # ==========================================
@@ -28,7 +32,7 @@ def analyze_image_content(base64_image, filename="unknown.jpg"):
             base64_image = f"data:image/png;base64,{base64_image}"
 
         payload = {
-            "model": "gpt-5.4-mini", # 🎯 修正 2：改回學校專用的圖片模型
+            "model": "gpt-5.4-mini",
             "messages": [
                 {
                     "role": "user", 

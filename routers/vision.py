@@ -1,14 +1,18 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException
 import base64
 from openai import OpenAI
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 建立 Router，設定統一的前綴路徑
 router = APIRouter(prefix="/vision", tags=["Vision圖片辨識"])
 
-# API 設定
-API_KEY = "sk-f884955258b0a4890c9aab6caab212c9c60a6424d4f1c775" # 建議未來改用環境變數 (os.getenv)
-BASE_URL = "https://air.cgu.edu.tw/cgullmapi/v1"
-MODEL = "gpt-5.4-mini"  # 🎯 這裡已經幫你修正為正確的模型名稱囉！
+# 讀取環境變數
+API_KEY = os.getenv("VISION_API_KEY")
+BASE_URL = os.getenv("BASE_URL")
+MODEL = "gpt-5.4-mini"
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 

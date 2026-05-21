@@ -4,3 +4,4 @@ uploads/
 *.exe
 credentials.json
 token.json
+.env
