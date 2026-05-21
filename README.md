@@ -91,6 +91,7 @@ cd C:\xampp\htdocs\whisper.0
 python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements.txt
+pip install python-dotenv
 ```
 *(註：確保您的本地端已放置必要的憑證檔與 FFmpeg 工具於專案根目錄。)*
 

@@ -13,7 +13,9 @@ UIManager.init(currentMeetingTopic);
 // 2. 建立 WebSocket 連線與訊息處理
 function setupWebSocket() {
     let host = window.location.hostname; if (!host || host === "") host = "192.168.150.5";
-    ws = new WebSocket(`ws://${host}:8765`); 
+    ws = new WebSocket(`ws://${host}:8765`);
+
+    window.ws = ws;
 
     ws.onopen = () => { 
         UIManager.els.statusText.textContent = '狀態：已連線'; 

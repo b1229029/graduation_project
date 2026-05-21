@@ -124,6 +124,25 @@ async def audio_handler(websocket):
                             event_link = await loop.run_in_executor(None, create_google_calendar_event, data.get('topic'), data.get('description'), data.get('datetime'), data.get('emails'))
                             await websocket.send(json.dumps({"type": "schedule_success", "link": event_link}))
                         except Exception as e: await websocket.send(json.dumps({"type": "error", "message": str(e)}))
+
+                    # 接收前端送來的圖片結果
+                    elif msg_type == 'append_image_result':
+                        img_filename = data.get('filename', '圖片')
+                        img_description = data.get('description', '')
+                        
+                        # 1. 將圖片結果加入到後端的總結日誌中 
+                        # (注意：字眼必須包含你在 ai_service.py 中要求的 [圖片分析]，才能觸發強制指示)
+                        tag_text = f"\n[圖片分析] {img_filename}:\n{img_description}\n"
+                        ai_transcript_log += tag_text
+                        
+                        # 2. 偽裝成一般的逐字稿訊息送回前端，讓 record.js 正常把它存入陣列並渲染，就不會被洗掉了
+                        await websocket.send(json.dumps({
+                            "type": "transcript",
+                            "text": f"🖼️ 【圖片分析】 {img_filename} - {img_description}",
+                            "ts": "[系統補充] ",
+                            "hit_topics": [],
+                            "status": "NORMAL"
+                        }))
                             
                     elif msg_type == 'start_file_upload':
                         is_file_mode = True

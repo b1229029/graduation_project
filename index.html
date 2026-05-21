@@ -244,6 +244,9 @@
         const btnUploadImage = document.getElementById('btn-upload-image');
         const fullTranscript = document.getElementById('full-transcript'); 
 
+        // 清除 record.js 預設的舊 onclick 綁定，避免點擊時重複發送請求
+        btnUploadImage.onclick = null;
+
         // 1. 監聽圖片選擇事件：當使用者選好圖片時，顯示檔名和分析按鈕
         imageInput.addEventListener('change', function() {
             if (this.files && this.files.length > 0) {
@@ -272,7 +275,7 @@
             btnUploadImage.disabled = true;
 
             try {
-                // 呼叫 FastAPI 後端
+                // 呼叫 FastAPI 後端路由進行視覺辨識
                 const response = await fetch("http://127.0.0.1:8000/vision/analyze", {
                     method: "POST",
                     body: formData
@@ -281,19 +284,21 @@
                 const data = await response.json();
 
                 if (response.ok && data.status === "success") {
-                    // 將回傳的結果加入到「完整逐字稿」區塊，並加上漂亮的背景色
-                    const resultHtml = `
-                    <div style="background-color: #e3f2fd; padding: 10px; border-radius: 5px; border-left: 4px solid #17a2b8; margin: 10px 0;">
-                        <strong>🖼️ [圖片分析] ${data.filename}</strong><br>
-                        ${data.description.replace(/\n/g, '<br>')}
-                    </div>`;
-                    
-                    fullTranscript.innerHTML += resultHtml;
-                    fullTranscript.scrollTop = fullTranscript.scrollHeight; // 自動滾動到底部
+                    // 不再直接修改 innerHTML，而是改用 WebSocket 把結果傳給後端變數
+                    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+                        window.ws.send(JSON.stringify({
+                            type: 'append_image_result',
+                            filename: data.filename,
+                            description: data.description
+                        }));
+                        imgStatus.textContent = '✅ 分析完成並已同步至會議紀錄';
+                    } else {
+                        alert("❌ 傳送失敗：WebSocket 未連線，請確認會議是否已經開始！");
+                        imgStatus.textContent = '⚠️ 傳送失敗';
+                    }
                     
                     // 重置上傳區塊的狀態
                     imageInput.value = '';
-                    imgStatus.textContent = '✅ 分析完成';
                     btnUploadImage.style.display = 'none';
                 } else {
                     console.error("後端回報錯誤:", data);
