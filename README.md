@@ -27,23 +27,28 @@
 │   ├── 系統設計文件書.pdf
 │   └── 4.20專題報告ppt.pptx
 │
->>>>>>> a8807fe577624036796ef6b1344ae4bd935a79bf
+├── routers/                # API 路由模組
+│   ├── __pycache__/
+│   ├── auth.py             # 登入與身份驗證
+│   ├── folders.py          # 專案資料夾管理
+│   ├── meetings.py         # 會議記錄存取
+│   └── vision.py           # 視覺影像辨識 API
+│
+├── services/               # 核心商業邏輯與外部 API 串接
+│   ├── __pycache__/
+│   ├── ai_service.py       # AI 總結與文本分析
+│   ├── audio_service.py    # 音訊格式處理與轉換
+│   ├── calendar_service.py # 日曆整合服務
+│   └── rag_service.py      # RAG 會議對話檢索
+│
+├── uploads/                # 音訊檔案上傳與處理暫存目錄
+├── venv/                   # Python 虛擬環境目錄
+├── __pycache__/            # Python 編譯快取資料夾
+│
 ├── main.py                 # 後端 API 程式進入點
 ├── listener.py             # 監聽與背景任務處理
 ├── database.py             # 資料庫連線與配置
 ├── schemas.py              # 資料驗證與結構定義
-│
-├── routers/                # API 路由模組
-│   ├── auth.py             # 登入與身份驗證
-│   ├── folders.py          # 專案資料夾管理
-│   └── meetings.py         # 會議記錄存取
-│
-├── services/               # 核心商業邏輯與外部 API 串接
-│   ├── ai_service.py       # AI 總結與文本分析
-│   ├── audio_service.py    # 音訊格式處理與轉換
-│   └── calendar_service.py # 日曆整合服務
-│
-├── uploads/                # 音訊檔案上傳與處理暫存目錄
 │
 ├── index.html              # 系統首頁
 ├── login.html              # 使用者登入介面
@@ -53,8 +58,12 @@
 ├── audio_manager.js        # 前端音訊播放與時間跳轉控制
 ├── record.js               # 前端錄音功能實作
 └── ui_manager.js           # 心智圖渲染與 UI 互動管理
-
---- 以下為本地端執行必備檔案 (未追蹤於 GitHub) ---
+│
+├── README.md               # 專案說明文件
+│
+--- 以下為配置檔與本地端執行必備檔案 ---
+├── .env                    # 環境變數設定檔 (API Keys 等)
+├── .gitignore              # Git 忽略檔案清單
 ├── credentials.json        # 外部服務 API 憑證 
 ├── token.json              # 授權 Token 紀錄
 ├── ffmpeg.exe              # 音訊轉檔與處理引擎
