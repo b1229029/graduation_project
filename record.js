@@ -277,6 +277,38 @@ setupWebSocket();
 const sendChatBtn = document.getElementById('send-chat-btn');
 const chatInput = document.getElementById('chat-input');
 
+function renderSafeMarkdown(markdownText) {
+    const rawText = markdownText || "";
+    if (window.marked && window.DOMPurify) {
+        return DOMPurify.sanitize(marked.parse(rawText));
+    }
+    const escapedText = rawText
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    return escapedText.replace(/\n/g, "<br>");
+}
+
+function appendChatMessage(historyEl, content, role) {
+    const message = document.createElement('div');
+    message.className = `chat-message ${role}`;
+
+    const bubble = document.createElement('span');
+    bubble.className = `chat-bubble ${role}`;
+
+    if (role === 'bot') {
+        bubble.classList.add('chat-markdown');
+        bubble.innerHTML = renderSafeMarkdown(content || "");
+    } else {
+        bubble.textContent = content;
+    }
+
+    message.appendChild(bubble);
+    historyEl.appendChild(message);
+}
+
 if (sendChatBtn && chatInput) {
     const handleSendChat = async () => {
         // RAG 問答只在有 meeting_id 的會議中啟用，問題會送到 /meetings/{id}/chat。
@@ -289,7 +321,7 @@ if (sendChatBtn && chatInput) {
             return;
         }
 
-        historyEl.innerHTML += `<div style="text-align: right; margin-bottom: 8px;"><span style="background: #007bff; color: white; padding: 5px 10px; border-radius: 15px; display: inline-block;">${question}</span></div>`;
+        appendChatMessage(historyEl, question, 'user');
         chatInput.value = '';
 
         const loadingId = 'loading-' + Date.now();
@@ -307,7 +339,7 @@ if (sendChatBtn && chatInput) {
             const loadingEl = document.getElementById(loadingId);
             if(loadingEl) loadingEl.remove();
 
-            historyEl.innerHTML += `<div style="margin-bottom: 8px;"><span style="background: #e9ecef; color: #333; padding: 8px 12px; border-radius: 15px; display: inline-block; max-width: 80%; line-height: 1.5; text-align: left;">🤖 ${data.answer.replace(/\n/g, '<br>')}</span></div>`;
+            appendChatMessage(historyEl, data.answer, 'bot');
             historyEl.scrollTop = historyEl.scrollHeight;
         } catch (err) {
             const loadingEl = document.getElementById(loadingId);

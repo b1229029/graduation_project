@@ -11,6 +11,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
     <script src="https://fastly.jsdelivr.net/npm/markmap-lib@0.15.4/dist/browser/index.min.js"></script>
     <script src="https://fastly.jsdelivr.net/npm/markmap-view@0.15.4/dist/browser/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
 
     <style>
         /* 與 index.html 保持相近的頁籤布局，但此頁以閱讀歷史資料為主。 */
@@ -48,6 +50,16 @@
 
         /* 聊天室專屬 */
         #chat-history { flex: 1; overflow-y: auto; background: #f4f6f9; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .chat-message { margin-bottom: 8px; }
+        .chat-message.user { text-align: right; }
+        .chat-bubble { padding: 8px 12px; border-radius: 15px; display: inline-block; max-width: 80%; line-height: 1.5; text-align: left; }
+        .chat-bubble.user { background: #007bff; color: #fff; padding: 5px 10px; }
+        .chat-bubble.bot { background: #e9ecef; color: #333; }
+        .chat-markdown p { margin: 0 0 8px; }
+        .chat-markdown p:last-child { margin-bottom: 0; }
+        .chat-markdown ul, .chat-markdown ol { margin: 6px 0 6px 20px; padding: 0; }
+        .chat-markdown pre { white-space: pre-wrap; background: #f8f9fa; padding: 8px; border-radius: 6px; overflow-x: auto; }
+        .chat-markdown code { background: #f8f9fa; padding: 1px 4px; border-radius: 4px; }
         .chat-input-area { display: flex; gap: 10px; flex-shrink: 0; }
         input[type="text"] { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 1em; }
         .btn-primary { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; }
@@ -219,6 +231,38 @@
         // --- 聊天機器人邏輯 ---
         const sendBtn = document.getElementById('send-chat-btn');
         const chatInput = document.getElementById('chat-input');
+
+        function renderSafeMarkdown(markdownText) {
+            const rawText = markdownText || "";
+            if (window.marked && window.DOMPurify) {
+                return DOMPurify.sanitize(marked.parse(rawText));
+            }
+            const escapedText = rawText
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+            return escapedText.replace(/\n/g, "<br>");
+        }
+
+        function appendChatMessage(historyEl, content, role) {
+            const message = document.createElement('div');
+            message.className = `chat-message ${role}`;
+
+            const bubble = document.createElement('span');
+            bubble.className = `chat-bubble ${role}`;
+
+            if (role === 'bot') {
+                bubble.classList.add('chat-markdown');
+                bubble.innerHTML = renderSafeMarkdown(content || "");
+            } else {
+                bubble.textContent = content;
+            }
+
+            message.appendChild(bubble);
+            historyEl.appendChild(message);
+        }
         
         async function handleSend() {
             // 將使用者問題送到後端 RAG 端點，並把回答追加到聊天紀錄。
@@ -226,7 +270,7 @@
             if (!question) return;
             
             const historyEl = document.getElementById('chat-history');
-            historyEl.innerHTML += `<div style="text-align: right; margin-bottom: 8px;"><span style="background: #007bff; color: white; padding: 5px 10px; border-radius: 15px; display: inline-block;">${question}</span></div>`;
+            appendChatMessage(historyEl, question, 'user');
             chatInput.value = '';
             
             const loadingId = 'loading-' + Date.now();
@@ -241,7 +285,7 @@
                 });
                 const data = await res.json();
                 document.getElementById(loadingId).remove();
-                historyEl.innerHTML += `<div style="margin-bottom: 8px;"><span style="background: #e9ecef; color: #333; padding: 8px 12px; border-radius: 15px; display: inline-block; max-width: 80%; line-height: 1.5;">${data.answer.replace(/\n/g, '<br>')}</span></div>`;
+                appendChatMessage(historyEl, data.answer, 'bot');
                 historyEl.scrollTop = historyEl.scrollHeight;
             } catch (err) { document.getElementById(loadingId).innerText = "❌ 錯誤：無法連接伺服器"; }
         }
