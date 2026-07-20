@@ -28,13 +28,37 @@ def extract_image_analysis_from_transcript(transcript: str) -> str:
     if not transcript:
         return ""
 
+    lines = transcript.splitlines()
     entries = []
-    for line in transcript.splitlines():
-        if "圖片分析" in line:
-            cleaned = line.strip()
-            if cleaned and cleaned not in entries:
-                entries.append(cleaned)
-    return "\n".join(entries)
+    index = 0
+
+    while index < len(lines):
+        line = lines[index].strip()
+        if "[圖片分析]" not in line and "【圖片分析】" not in line:
+            index += 1
+            continue
+
+        if "[圖片分析]" in line:
+            title = line.split("[圖片分析]", 1)[1].strip()
+        else:
+            title = line.split("【圖片分析】", 1)[1].strip()
+        title = title.lstrip(":- ")
+        block = [f"[圖片分析] {title or '圖片'}"]
+        index += 1
+
+        while index < len(lines):
+            next_line = lines[index].strip()
+            if next_line.startswith("[") and "[圖片分析]" not in next_line and "圖片：" not in next_line:
+                break
+            if next_line:
+                block.append(next_line)
+            index += 1
+
+        entry = "\n".join(block).strip()
+        if entry and entry not in entries:
+            entries.append(entry)
+
+    return "\n\n".join(entries)
 
 @router.post("/meetings")
 def create_meeting(request: MeetingCreate):

@@ -50,7 +50,8 @@ function setupWebSocket() {
                     ws.send(JSON.stringify({
                         type: "append_image_result",
                         filename: data.filename || "圖片",
-                        description: data.description || ""
+                        description: data.description || "",
+                        image_url: data.image_url || ""
                     }));
                 }
             }
@@ -124,7 +125,8 @@ UIManager.els.btnUploadImage.onclick = () => {
         const imgContainer = document.createElement('div');
         imgContainer.style.margin = "10px 0"; imgContainer.style.textAlign = "center";
         imgContainer.innerHTML = `<img src="${base64Data}" style="max-width: 60%; border-radius: 8px; border: 2px solid #17a2b8;"><p style="font-size:0.8em; color:#666; margin:5px 0;">[已上傳圖片] ${file.name}</p>`;
-        UIManager.els.liveTranscript.appendChild(imgContainer); UIManager.els.liveTranscript.scrollTop = UIManager.els.liveTranscript.scrollHeight;
+        UIManager.els.fullTranscript.appendChild(imgContainer);
+        UIManager.els.fullTranscript.scrollTop = UIManager.els.fullTranscript.scrollHeight;
         if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "analyze_image", image_data: base64Data, filename: file.name }));
     };
     reader.readAsDataURL(file);
@@ -182,12 +184,23 @@ function startFileUpload() {
 
 function extractImageAnalysisFromTranscript(transcriptText) {
     // 從舊版逐字稿標籤回收圖片分析文字，保留向後相容。
-    return transcriptText
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.includes('圖片分析'))
-        .filter((line, index, arr) => arr.indexOf(line) === index)
-        .join('\n');
+    const lines = transcriptText.split('\n');
+    const blocks = [];
+
+    for (let index = 0; index < lines.length; index++) {
+        const line = lines[index].trim();
+        const imageMatch = line.match(/^(\[[^\]]+\])\s*\[圖片分析\]\s*(.*)$/);
+        if (!imageMatch) continue;
+
+        const blockLines = [`[圖片分析] ${imageMatch[2] || '圖片'}`];
+        while (index + 1 < lines.length && !lines[index + 1].match(/^\[[^\]]+\]/)) {
+            index++;
+            blockLines.push(lines[index].trim());
+        }
+        blocks.push(blockLines.join('\n').trim());
+    }
+
+    return blocks.filter((block, index, arr) => block && arr.indexOf(block) === index).join('\n\n');
 }
 
 function getImageAnalysisTextForSave() {
@@ -197,7 +210,9 @@ function getImageAnalysisTextForSave() {
     }
 
     const fromLog = (UIManager.imageAnalysisLog || []).join('\n\n').trim();
-    const finalTranscript = UIManager.fullTranscriptLog.join('\n');
+    const finalTranscript = typeof UIManager.formatTranscriptForSave === 'function'
+        ? UIManager.formatTranscriptForSave()
+        : UIManager.fullTranscriptLog.join('\n');
     const fromTranscript = extractImageAnalysisFromTranscript(finalTranscript).trim();
     return fromLog || fromTranscript;
 }
@@ -226,7 +241,9 @@ async function saveMeetingDataToDB(summary, mindmap) {
     if (backBtn) backBtn.style.opacity = '0.5';
 
     try {
-        const finalTranscript = UIManager.fullTranscriptLog.join('\n');
+        const finalTranscript = typeof UIManager.formatTranscriptForSave === 'function'
+            ? UIManager.formatTranscriptForSave()
+            : UIManager.fullTranscriptLog.join('\n');
         const imageAnalysisText = getImageAnalysisTextForSave();
         
         await fetch(`${API_BASE_URL}/meetings/${currentMeetingId}`, {

@@ -8,6 +8,8 @@ from fastapi import APIRouter, File, UploadFile, HTTPException
 import base64
 from openai import OpenAI
 import os
+from pathlib import Path
+from uuid import uuid4
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -22,6 +24,9 @@ MODEL = "gpt-5.4-mini"
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
+IMAGE_UPLOAD_DIR = Path("uploads/images")
+IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
 @router.post("/analyze")
 async def analyze_image(file: UploadFile = File(...)):
     """分析單張圖片並回傳模型描述。
@@ -34,9 +39,15 @@ async def analyze_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="請上傳圖片檔案")
 
     try:
-        # 2. 讀取前端上傳的圖片內容，並直接在記憶體中轉為 Base64 (不需要存檔)
+        # 2. 讀取前端上傳的圖片內容，同時保存一份供逐字稿與歷史紀錄顯示。
         contents = await file.read()
         image_base64 = base64.b64encode(contents).decode("utf-8")
+        original_suffix = Path(file.filename or "").suffix.lower()
+        suffix = original_suffix if original_suffix in {".jpg", ".jpeg", ".png", ".gif", ".webp"} else ".jpg"
+        saved_filename = f"{uuid4().hex}{suffix}"
+        saved_path = IMAGE_UPLOAD_DIR / saved_filename
+        saved_path.write_bytes(contents)
+        image_url = f"uploads/images/{saved_filename}"
         
         # 取得圖片類型 (例如 image/png, image/jpeg)
         mime_type = file.content_type
@@ -66,7 +77,8 @@ async def analyze_image(file: UploadFile = File(...)):
         return {
             "status": "success",
             "filename": file.filename,
-            "description": response.output_text
+            "description": response.output_text,
+            "image_url": image_url
         }
 
     except Exception as e:

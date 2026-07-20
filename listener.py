@@ -37,6 +37,18 @@ OVERLAP_DURATION_MS = 10000
 WS_HOST = "0.0.0.0"
 WS_PORT = 8765
 SILENCE_THRESHOLD = -35
+WHISPER_INITIAL_PROMPT = "以下是繁體中文會議錄音逐字稿。請只輸出錄音中實際說出的內容。"
+
+def is_prompt_leak(text):
+    """過濾 Whisper 偶爾把 initial_prompt 當成逐字稿輸出的片段。"""
+    normalized = (text or "").replace(" ", "").strip()
+    prompt_leak_markers = [
+        "本次會議參與者",
+        "我們正在討論一般會議",
+        "以下是繁體中文會議錄音逐字稿",
+        "請只輸出錄音中實際說出的內容",
+    ]
+    return any(marker in normalized for marker in prompt_leak_markers)
 
 async def audio_handler(websocket):
     """處理單一前端 WebSocket 連線的完整會議生命週期。
@@ -151,6 +163,7 @@ async def audio_handler(websocket):
                         # 將已完成的圖片分析結果寫入逐字稿累積文字，使總摘要與 RAG 都能看到。
                         img_filename = data.get('filename', '圖片')
                         img_description = data.get('description', '')
+                        img_url = data.get('image_url', '')
                         
                         # 1. 將圖片結果加入到後端的總結日誌中 
                         # (注意：字眼必須包含你在 ai_service.py 中要求的 [圖片分析]，才能觸發強制指示)
@@ -166,7 +179,8 @@ async def audio_handler(websocket):
                             "status": "NORMAL",
                             "image_analysis": {
                                 "filename": img_filename,
-                                "description": img_description
+                                "description": img_description,
+                                "image_url": img_url
                             }
                         }))
                             
@@ -183,15 +197,13 @@ async def audio_handler(websocket):
                         try:
                             loop = asyncio.get_running_loop()
 
-                            # 🚀 (檔案模式) 將參與者名單加入 Whisper Prompt
-                            base_prompt = "我們正在討論一般會議。繁體中文。"
-                            dynamic_prompt = f"{base_prompt} 本次會議參與者有：{current_participants}。" if current_participants else base_prompt
-
-                            run_transcribe = functools.partial(whisper_model.transcribe, upload_file_path, language="zh", fp16=(DEVICE == "cuda"), initial_prompt=dynamic_prompt)
+                            # 參與者名單只提供給摘要階段；若放進 Whisper prompt，模型可能把它誤轉成逐字稿。
+                            run_transcribe = functools.partial(whisper_model.transcribe, upload_file_path, language="zh", fp16=(DEVICE == "cuda"), initial_prompt=WHISPER_INITIAL_PROMPT)
                             result = await loop.run_in_executor(None, run_transcribe)
                             
                             for segment in result['segments']:
                                 text = cc.convert(segment['text'])
+                                if is_prompt_leak(text): continue
                                 if not text.strip(): continue
                                 start_time = int(segment['start'])
                                 m, s = divmod(start_time, 60)
@@ -250,17 +262,16 @@ async def audio_handler(websocket):
                             overlap_offset = len(prefix_segment) / 1000.0
                         last_audio_segment = current_audio_chunk
 
-                        # 🚀 (即時模式) 將參與者名單加入 Whisper Prompt
-                        base_prompt = "我們正在討論一般會議。繁體中文。"
-                        dynamic_prompt = f"{base_prompt} 本次會議參與者有：{current_participants}。" if current_participants else base_prompt
-                        
                         loop = asyncio.get_running_loop()
-                        run_transcribe = functools.partial(whisper_model.transcribe, samples_to_process, language="zh", fp16=(DEVICE == "cuda"), initial_prompt=dynamic_prompt)
+                        run_transcribe = functools.partial(whisper_model.transcribe, samples_to_process, language="zh", fp16=(DEVICE == "cuda"), initial_prompt=WHISPER_INITIAL_PROMPT)
                         result = await loop.run_in_executor(None, run_transcribe)
                         
                         clean_text_parts = []
                         for segment in result['segments']:
-                            if segment['end'] > overlap_offset: clean_text_parts.append(cc.convert(segment['text']))
+                            if segment['end'] > overlap_offset:
+                                segment_text = cc.convert(segment['text'])
+                                if not is_prompt_leak(segment_text):
+                                    clean_text_parts.append(segment_text)
                         pure_new_text = "".join(clean_text_parts)
                         final_clean_text = remove_overlap_text(server_clean_buffer, pure_new_text)
                         

@@ -62,11 +62,21 @@
             border: 1px solid #ccc; padding: 10px; background: #fff; 
             overflow-y: auto; flex: 1; border-radius: 4px; margin-bottom: 10px; 
         }
-        #live-transcript { border-left: 5px solid #007bff; flex: 1; }
-        #full-transcript { border-left: 5px solid #28a745; flex: 1; background: #f9fff9; line-height: 1.8; color: #333; }
-        #full-transcript p { margin: 8px 0; border-bottom: 1px dashed #eee; padding-bottom: 5px; }
+        #full-transcript { border-left: 5px solid #28a745; flex: 1; background: #fbfffc; line-height: 1.65; color: #333; padding: 12px 16px; }
+        .transcript-entry { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; align-items: start; margin: 0; border-bottom: 1px solid #e7f1e9; padding: 10px 0; transition: background-color 0.2s; }
+        .transcript-time { color: #176b35; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .transcript-main { min-width: 0; }
+        .transcript-meta { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-right: 6px; vertical-align: middle; }
+        .transcript-text { vertical-align: middle; }
+        .topic-hit { display: inline-block; color: #0b7285; font-size: 0.85em; background: #e7f8fb; border-radius: 999px; padding: 1px 8px; }
+        .transcript-image-card, .image-analysis-card { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 12px; align-items: start; margin-top: 4px; }
+        .transcript-image-thumb, .image-analysis-thumb { width: 132px; max-height: 96px; object-fit: cover; border-radius: 6px; border: 1px solid #cfe8d4; background: #fff; }
+        .transcript-image-body p, .image-analysis-body p { margin: 4px 0 0; line-height: 1.55; }
         #image-analysis-result-section { display: none; flex-shrink: 0; margin-bottom: 12px; }
-        #image-analysis-result-box { max-height: 220px; overflow-y: auto; white-space: pre-wrap; line-height: 1.6; color: #333; background: #eef7ff; padding: 15px; border-left: 5px solid #17a2b8; border-radius: 4px; font-size: 14px; }
+        #image-analysis-result-box { max-height: 320px; overflow-y: auto; line-height: 1.6; color: #333; background: #eef7ff; padding: 12px; border-left: 5px solid #17a2b8; border-radius: 4px; font-size: 14px; }
+        .image-analysis-card { grid-template-columns: 150px minmax(0, 1fr); border-bottom: 1px solid #cfe9f4; padding-bottom: 10px; margin-bottom: 10px; }
+        .image-analysis-card:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+        .image-analysis-thumb { width: 150px; max-height: 110px; border-color: #b6ddec; }
 
         .tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; color: white; margin-right: 5px; }
         .tag-consensus { background-color: #28a745; }
@@ -167,9 +177,7 @@
                 </div>
 
                 <div class="card transcript-panel">
-                    <h3>即時字幕 (含情緒標記)</h3>
-                    <div id="live-transcript" class="transcript-box"></div>
-                    <h3>完整逐字稿 (純文字紀錄)</h3>
+                    <h3>完整逐字稿 (即時更新｜含時間戳、情緒標記與議程命中)</h3>
                     <div id="full-transcript" class="transcript-box"></div>
                 </div>
             </div>
@@ -267,8 +275,8 @@
     </script>
 
     <script src="audio_manager.js"></script>
-    <script src="ui_manager.js?v=2026-05-24-image-result"></script>
-    <script src="record.js?v=2026-05-24-image-result"></script>
+    <script src="ui_manager.js?v=2026-07-20-transcript-images"></script>
+    <script src="record.js?v=2026-07-20-transcript-images"></script>
 
     <script>
         // 這段處理圖片上傳的 REST API 流程；record.js 另有 WebSocket 圖片流程，
@@ -320,13 +328,14 @@
                 if (response.ok && data.status === "success") {
                     // 不再直接修改 innerHTML，而是改用 WebSocket 把結果傳給後端變數
                     if (typeof UIManager !== 'undefined' && typeof UIManager.addImageAnalysis === 'function') {
-                        UIManager.addImageAnalysis(data.filename, data.description);
+                        UIManager.addImageAnalysis(data.filename, data.description, data.image_url);
                     }
                     if (window.ws && window.ws.readyState === WebSocket.OPEN) {
                         window.ws.send(JSON.stringify({
                             type: 'append_image_result',
                             filename: data.filename,
-                            description: data.description
+                            description: data.description,
+                            image_url: data.image_url || ''
                         }));
                         imgStatus.textContent = '✅ 分析完成並已同步至會議紀錄';
                     } else {

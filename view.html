@@ -42,9 +42,25 @@
         h3 { margin-top: 0; color: #333; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-bottom: 15px; flex-shrink: 0; }
 
         /* 內容區塊細節 */
-        #transcript-content { flex: 1; overflow-y: auto; white-space: pre-wrap; line-height: 1.8; color: #444; background: #f9fff9; padding: 20px; border-left: 5px solid #28a745; border-radius: 4px; font-size: 15px; }
+        #transcript-content { flex: 1; overflow-y: auto; line-height: 1.65; color: #444; background: #fbfffc; padding: 12px 16px; border-left: 5px solid #28a745; border-radius: 4px; font-size: 15px; }
+        #transcript-content p { margin: 0; border-bottom: 1px solid #e7f1e9; padding: 10px 0; }
+        .tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; color: white; margin-right: 5px; }
+        .tag-consensus { background-color: #28a745; }
+        .tag-dispute { background-color: #dc3545; }
+        .text-dispute { color: #c0392b; }
+        .transcript-entry { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; align-items: start; margin: 0; border-bottom: 1px solid #e7f1e9; padding: 10px 0; }
+        .transcript-time { color: #176b35; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .transcript-main { min-width: 0; }
+        .transcript-text { vertical-align: middle; }
+        .topic-hit { display: inline-block; margin-left: 6px; color: #0b7285; font-size: 0.85em; background: #e7f8fb; border-radius: 999px; padding: 1px 8px; }
+        .transcript-image-card, .image-analysis-card { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 12px; align-items: start; margin-top: 4px; }
+        .transcript-image-thumb, .image-analysis-thumb { width: 132px; max-height: 96px; object-fit: cover; border-radius: 6px; border: 1px solid #cfe8d4; background: #fff; }
+        .transcript-image-body p, .image-analysis-body p { margin: 4px 0 0; border: 0; padding: 0; line-height: 1.55; }
         #summary-content { flex: 1; overflow-y: auto; white-space: pre-wrap; line-height: 1.6; color: #333; font-size: 15px; }
-        #image-analysis-content { max-height: 220px; overflow-y: auto; white-space: pre-wrap; line-height: 1.6; color: #333; background: #eef7ff; padding: 15px; border-left: 5px solid #17a2b8; border-radius: 4px; font-size: 14px; margin-bottom: 15px; }
+        #image-analysis-content { max-height: 320px; overflow-y: auto; line-height: 1.6; color: #333; background: #eef7ff; padding: 12px; border-left: 5px solid #17a2b8; border-radius: 4px; font-size: 14px; margin-bottom: 15px; }
+        .image-analysis-card { grid-template-columns: 150px minmax(0, 1fr); border-bottom: 1px solid #cfe9f4; padding-bottom: 10px; margin-bottom: 10px; }
+        .image-analysis-card:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+        .image-analysis-thumb { width: 150px; max-height: 110px; border-color: #b6ddec; }
         #mindmap-container { flex: 1; border: 1px solid #ddd; border-radius: 8px; background: #fff; overflow: hidden; }
         #markmap-svg { width: 100%; height: 100%; }
 
@@ -134,6 +150,158 @@
         let targetEndTime = null;
         let pendingMindmapRoot = null;
 
+        function escapeHtml(value) {
+            return String(value || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function resolveAssetUrl(url) {
+            if (!url) return '';
+            if (/^(https?:|data:|blob:)/.test(url)) return url;
+            return `${API_BASE_URL}/${String(url).replace(/^\/+/, '')}`;
+        }
+
+        function renderImageCard(item, classPrefix = 'transcript') {
+            const cardClass = classPrefix === 'image-analysis' ? 'image-analysis-card' : 'transcript-image-card';
+            const thumbClass = classPrefix === 'image-analysis' ? 'image-analysis-thumb' : 'transcript-image-thumb';
+            const bodyClass = classPrefix === 'image-analysis' ? 'image-analysis-body' : 'transcript-image-body';
+            return `
+                <div class="${cardClass}">
+                    ${item.image_url ? `<img class="${thumbClass}" src="${escapeHtml(resolveAssetUrl(item.image_url))}" alt="${escapeHtml(item.filename || '圖片分析')}">` : ''}
+                    <div class="${bodyClass}">
+                        <strong>圖片分析：${escapeHtml(item.filename || '圖片')}</strong>
+                        <p>${escapeHtml(item.description || '').replace(/\n{3,}/g, '\n\n').replace(/\n/g, '<br>')}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTranscriptText(transcriptText) {
+            if (!transcriptText) return "無資料";
+
+            const lines = transcriptText.split('\n');
+            const html = [];
+
+            for (let index = 0; index < lines.length; index++) {
+                const line = lines[index];
+                const rawLine = line.trim();
+                if (!rawLine) continue;
+
+                const imageMatch = rawLine.match(/^(\[[^\]]+\])\s*\[圖片分析\]\s*(.*)$/);
+                if (imageMatch) {
+                    const blockLines = [];
+                    while (index + 1 < lines.length && !lines[index + 1].match(/^\[[^\]]+\]/)) {
+                        index++;
+                        blockLines.push(lines[index].trim());
+                    }
+                    const imageLineIndex = blockLines.findIndex(blockLine => blockLine.startsWith('圖片：'));
+                    const imageUrl = imageLineIndex >= 0 ? blockLines[imageLineIndex].replace(/^圖片：/, '').trim() : '';
+                    const description = blockLines
+                        .filter((_, blockIndex) => blockIndex !== imageLineIndex)
+                        .join('\n')
+                        .trim();
+                    html.push(`
+                        <div id="history-transcript-${index}" class="transcript-entry">
+                            <span class="transcript-time">${escapeHtml(imageMatch[1])}</span>
+                            <span class="transcript-main">
+                                ${renderImageCard({
+                                    filename: imageMatch[2] || '圖片',
+                                    image_url: imageUrl,
+                                    description
+                                })}
+                            </span>
+                        </div>
+                    `);
+                    continue;
+                }
+
+                const match = rawLine.match(/^(\[[^\]]+\])\s*(?:\[([^\]]+)\])?\s*(.*)$/);
+                if (!match) {
+                    html.push(`<p>${escapeHtml(rawLine)}</p>`);
+                    continue;
+                }
+
+                const ts = match[1];
+                const meta = match[2] || "";
+                const text = match[3] || "";
+                const isConsensus = meta.includes('共識');
+                const isDispute = meta.includes('爭議');
+                const topicMatch = meta.match(/議程：(.+)/);
+                const tag = isConsensus
+                    ? '<span class="tag tag-consensus">共識</span>'
+                    : isDispute
+                        ? '<span class="tag tag-dispute">爭議</span>'
+                        : '';
+                const topics = topicMatch
+                    ? `<span class="topic-hit">議程：${escapeHtml(topicMatch[1])}</span>`
+                    : '';
+                const className = isDispute ? 'transcript-entry text-dispute' : 'transcript-entry';
+
+                html.push(`
+                    <div id="history-transcript-${index}" class="${className}">
+                        <span class="transcript-time">${escapeHtml(ts)}</span>
+                        <span class="transcript-main">
+                            ${tag}${topics}
+                            <span class="transcript-text">${escapeHtml(text)}</span>
+                        </span>
+                    </div>
+                `);
+            }
+
+            return html.join('');
+        }
+
+        function extractImageAnalysisFromTranscript(transcriptText) {
+            if (!transcriptText) return "";
+
+            const lines = transcriptText.split('\n');
+            const blocks = [];
+            for (let index = 0; index < lines.length; index++) {
+                const rawLine = lines[index].trim();
+                const imageMatch = rawLine.match(/^(\[[^\]]+\])\s*\[圖片分析\]\s*(.*)$/);
+                if (!imageMatch) continue;
+
+                const blockLines = [`[圖片分析] ${imageMatch[2] || '圖片'}`];
+                while (index + 1 < lines.length && !lines[index + 1].match(/^\[[^\]]+\]/)) {
+                    index++;
+                    blockLines.push(lines[index].trim());
+                }
+                blocks.push(blockLines.join('\n').trim());
+            }
+
+            return blocks.join('\n\n');
+        }
+
+        function parseImageAnalysisItems(imageAnalysisText) {
+            if (!imageAnalysisText) return [];
+
+            return imageAnalysisText.split(/\n\s*\n(?=\[圖片分析\])/).map(block => {
+                const lines = block.split('\n').map(line => line.trim()).filter(Boolean);
+                const titleLine = lines.shift() || '';
+                const titleMatch = titleLine.match(/^\[圖片分析\]\s*(.*)$/);
+                const imageLineIndex = lines.findIndex(line => line.startsWith('圖片：'));
+                const imageUrl = imageLineIndex >= 0 ? lines[imageLineIndex].replace(/^圖片：/, '').trim() : '';
+                const description = lines
+                    .filter((_, index) => index !== imageLineIndex)
+                    .join('\n');
+                return {
+                    filename: titleMatch ? titleMatch[1] : '圖片分析',
+                    image_url: imageUrl,
+                    description
+                };
+            }).filter(item => item.description || item.image_url);
+        }
+
+        function renderImageAnalysisText(imageAnalysisText) {
+            const items = parseImageAnalysisItems(imageAnalysisText);
+            if (!items.length) return escapeHtml(imageAnalysisText || '').replace(/\n/g, '<br>');
+            return items.map(item => renderImageCard(item, 'image-analysis')).join('');
+        }
+
         // --- 分頁切換邏輯 ---
         function switchPage(pageName) {
             // 切換逐字稿、摘要、心智圖與聊天頁籤；心智圖頁顯示時重新 fit。
@@ -162,11 +330,12 @@
                 const data = await response.json();
 
                 document.getElementById('navbar-title').innerText = ` ${data.title}`;
-                document.getElementById('transcript-content').innerText = data.transcript_text || "無資料";
+                document.getElementById('transcript-content').innerHTML = renderTranscriptText(data.transcript_text);
                 document.getElementById('summary-content').innerText = data.summary_text || "無總結資料";
-                if (data.image_analysis_text) {
+                const imageAnalysisText = data.image_analysis_text || extractImageAnalysisFromTranscript(data.transcript_text);
+                if (imageAnalysisText) {
                     document.getElementById('image-analysis-section').style.display = 'block';
-                    document.getElementById('image-analysis-content').innerText = data.image_analysis_text;
+                    document.getElementById('image-analysis-content').innerHTML = renderImageAnalysisText(imageAnalysisText);
                 }
 
                 // 音檔播放器

@@ -9,7 +9,7 @@
 const UIManager = {
     // myTopics 是使用者設定的議程；topicToTranscriptId 用來讓已命中的議程可跳到逐字稿位置。
     myTopics: [], topicToTranscriptId: {},
-    // fullTranscriptLog 保存完整逐字稿；imageAnalysisLog 保存獨立圖片分析文字。
+    // fullTranscriptLog 保存含時間戳、情緒標記與議程命中的完整逐字稿。
     fullTranscriptLog: [], imageAnalysisLog: [], chunkCounter: 0,
     // mindmapTimestamps 與 targetEndTime 用於點擊心智圖節點後播放對應音訊片段。
     mindmapTimestamps: [], targetEndTime: null,
@@ -132,61 +132,136 @@ const UIManager = {
         });
     },
 
+    escapeHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    },
+
+    getStatusLabel(status) {
+        if (status === 'CONSENSUS') return '共識';
+        if (status === 'DISPUTE') return '爭議';
+        return '';
+    },
+
+    renderTranscriptEntry(entry) {
+        const statusLabel = this.getStatusLabel(entry.status);
+        const tag = statusLabel ? `<span class="tag ${entry.status === 'DISPUTE' ? 'tag-dispute' : 'tag-consensus'}">${statusLabel}</span>` : '';
+        const topics = entry.hit_topics && entry.hit_topics.length
+            ? `<span class="topic-hit">議程：${entry.hit_topics.map(t => this.escapeHtml(t)).join('、')}</span>`
+            : '';
+        const className = entry.status === 'DISPUTE' ? 'transcript-entry text-dispute' : 'transcript-entry';
+        const imageAnalysis = entry.image_analysis ? `
+            <div class="transcript-image-card">
+                ${entry.image_analysis.image_url ? `<img class="transcript-image-thumb" src="${this.escapeHtml(this.resolveAssetUrl(entry.image_analysis.image_url))}" alt="${this.escapeHtml(entry.image_analysis.filename || '圖片分析')}">` : ''}
+                <div class="transcript-image-body">
+                    <strong>圖片分析：${this.escapeHtml(entry.image_analysis.filename || '圖片')}</strong>
+                    <p>${this.escapeHtml(entry.image_analysis.description || entry.text || '').replace(/\n{3,}/g, '\n\n').replace(/\n/g, '<br>')}</p>
+                </div>
+            </div>
+        ` : '';
+
+        return `
+            <div id="${entry.id}" class="${className}">
+                <span class="transcript-time">${this.escapeHtml(entry.ts)}</span>
+                <span class="transcript-main">
+                    <span class="transcript-meta">${tag}${topics}</span>
+                    ${entry.image_analysis ? imageAnalysis : `<span class="transcript-text">${this.escapeHtml(entry.text)}</span>`}
+                </span>
+            </div>
+        `;
+    },
+
+    renderFullTranscript() {
+        if (!this.els.fullTranscript) return;
+        this.els.fullTranscript.innerHTML = this.fullTranscriptLog.map(entry => this.renderTranscriptEntry(entry)).join('');
+        this.els.fullTranscript.scrollTop = this.els.fullTranscript.scrollHeight;
+    },
+
+    formatTranscriptForSave() {
+        return (this.fullTranscriptLog || []).map(entry => {
+            if (entry.image_analysis) {
+                const image = entry.image_analysis;
+                const imageLine = image.image_url ? `\n圖片：${image.image_url}` : '';
+                return `${entry.ts} [圖片分析] ${image.filename || '圖片'}${imageLine}\n${image.description || entry.text || ''}`;
+            }
+
+            const tags = [];
+            const statusLabel = this.getStatusLabel(entry.status);
+            if (statusLabel) tags.push(statusLabel);
+            if (entry.hit_topics && entry.hit_topics.length) tags.push(`議程：${entry.hit_topics.join('、')}`);
+            const tagText = tags.length ? ` [${tags.join('｜')}]` : '';
+            return `${entry.ts}${tagText} ${entry.text}`;
+        }).join('\n');
+    },
+
     updateTranscript(data) {
-        // 接收後端辨識結果後，同步更新即時逐字稿、完整逐字稿與議程命中狀態。
+        // 接收後端辨識結果後，更新唯一的完整逐字稿，並同步議程命中狀態。
         const ts = data.ts ? data.ts.trim() : `[片段]`;
-        const p = document.createElement('p'); p.id = `transcript-${this.chunkCounter}`; 
-        
-        let tag = ''; 
-        if (data.status === 'CONSENSUS') tag = '<span class="tag tag-consensus">共識</span>'; 
-        else if (data.status === 'DISPUTE') { tag = '<span class="tag tag-dispute">爭議</span>'; p.style.color = '#c0392b'; }
-        
-        p.innerHTML = `${tag} <strong>${ts}</strong> ${data.text}`; p.style.padding = '5px'; 
-        this.els.liveTranscript.appendChild(p); this.els.liveTranscript.scrollTop = this.els.liveTranscript.scrollHeight;
-        
+        const entry = {
+            id: `transcript-${this.chunkCounter}`,
+            ts,
+            text: data.text || "",
+            status: data.status || "NORMAL",
+            hit_topics: Array.isArray(data.hit_topics) ? data.hit_topics : [],
+            image_analysis: data.image_analysis || null
+        };
+        this.fullTranscriptLog.push(entry);
+
         if (data.image_analysis) {
-            this.addImageAnalysis(data.image_analysis.filename, data.image_analysis.description);
+            this.addImageAnalysis(data.image_analysis.filename, data.image_analysis.description, data.image_analysis.image_url);
         }
-        this.fullTranscriptLog.push(`${ts} ${data.text}`);
-        
-        if (data.hit_topics && data.hit_topics.length > 0) {
+
+        if (entry.hit_topics.length > 0) {
             let shouldRenderAgenda = false;
-            data.hit_topics.forEach(t => { if (!this.topicToTranscriptId[t]) { this.topicToTranscriptId[t] = p.id; shouldRenderAgenda = true; } });
+            entry.hit_topics.forEach(t => { if (!this.topicToTranscriptId[t]) { this.topicToTranscriptId[t] = entry.id; shouldRenderAgenda = true; } });
             if (shouldRenderAgenda) this.renderAgendaList();
         }
         this.chunkCounter++; 
-        
-        this.els.fullTranscript.innerHTML = this.fullTranscriptLog.map(t => `<p>${t}</p>`).join(''); 
-        this.els.fullTranscript.scrollTop = this.els.fullTranscript.scrollHeight;
+
+        this.renderFullTranscript();
         this.els.warningMsg.style.display = data.warning ? 'block' : 'none'; this.els.warningMsg.textContent = data.warning || '';
     },
 
     updateImageAnalysis(data) {
         // 圖片分析結果同時顯示在即時紀錄，也寫入 imageAnalysisLog 供摘要與儲存使用。
-        this.addImageAnalysis(data.filename || '圖片', data.description || '');
-        const p = document.createElement('p'); p.style.background = "#e3f2fd"; p.style.borderLeft = "4px solid #17a2b8";
-        p.innerHTML = `<strong>[圖片分析]</strong> ${data.description}`;
-        this.els.liveTranscript.appendChild(p); this.els.liveTranscript.scrollTop = this.els.liveTranscript.scrollHeight;
+        this.addImageAnalysis(data.filename || '圖片', data.description || '', data.image_url || '');
         this.els.btnUploadImage.disabled = false; this.els.btnUploadImage.textContent = "分析圖片"; 
         this.els.imgStatus.textContent = "✅ 分析完成"; this.els.imageInput.value = "";
     },
 
-    addImageAnalysis(filename, description) {
+    addImageAnalysis(filename, description, imageUrl) {
         // 用完整 entry 去重，避免同一張圖片透過 HTTP 與 WebSocket 流程被加入兩次。
         if (!description) return;
-        const entry = `[圖片分析] ${filename || '圖片'}:\n${description}`;
-        if (!this.imageAnalysisLog.includes(entry)) {
+        const entry = {
+            filename: filename || '圖片',
+            description,
+            image_url: imageUrl || ''
+        };
+        const key = `${entry.filename}\n${entry.description}\n${entry.image_url}`;
+        const exists = this.imageAnalysisLog.some(item => {
+            if (typeof item === 'string') return item === key || item.includes(entry.description);
+            return `${item.filename}\n${item.description}\n${item.image_url}` === key;
+        });
+        if (!exists) {
             this.imageAnalysisLog.push(entry);
         }
     },
 
     getImageAnalysisText() {
         // 優先使用獨立圖片分析紀錄；若沒有，再從舊版逐字稿標籤中回推。
-        const fromLog = (this.imageAnalysisLog || []).join('\n\n').trim();
+        const fromLog = (this.imageAnalysisLog || []).map(item => {
+            if (typeof item === 'string') return item;
+            const imageLine = item.image_url ? `圖片：${item.image_url}\n` : '';
+            return `[圖片分析] ${item.filename || '圖片'}\n${imageLine}${item.description || ''}`;
+        }).join('\n\n').trim();
         if (fromLog) return fromLog;
 
         return (this.fullTranscriptLog || [])
-            .map(line => String(line).trim())
+            .map(entry => String(entry.text || entry).trim())
             .filter(line => line.includes('圖片分析'))
             .filter((line, index, arr) => arr.indexOf(line) === index)
             .join('\n');
@@ -199,13 +274,47 @@ const UIManager = {
         const imageAnalysisText = this.getImageAnalysisText();
         if (imageAnalysisText) {
             this.els.imageAnalysisResultSection.style.display = 'block';
-            this.els.imageAnalysisResultBox.textContent = imageAnalysisText;
+            this.els.imageAnalysisResultBox.innerHTML = this.renderImageAnalysisItems();
         } else {
             this.els.imageAnalysisResultSection.style.display = 'none';
-            this.els.imageAnalysisResultBox.textContent = '';
+            this.els.imageAnalysisResultBox.innerHTML = '';
         }
 
         return imageAnalysisText;
+    },
+
+    renderImageAnalysisItems() {
+        const items = this.getImageAnalysisItems();
+        if (!items.length) return '';
+
+        return items.map(item => `
+            <div class="image-analysis-card">
+                ${item.image_url ? `<img class="image-analysis-thumb" src="${this.escapeHtml(this.resolveAssetUrl(item.image_url))}" alt="${this.escapeHtml(item.filename)}">` : ''}
+                <div class="image-analysis-body">
+                    <strong>${this.escapeHtml(item.filename || '圖片分析')}</strong>
+                    <p>${this.escapeHtml(item.description || '').replace(/\n{3,}/g, '\n\n').replace(/\n/g, '<br>')}</p>
+                </div>
+            </div>
+        `).join('');
+    },
+
+    getImageAnalysisItems() {
+        const fromLog = (this.imageAnalysisLog || []).map(item => {
+            if (typeof item !== 'string') return item;
+            return { filename: '圖片分析', description: item, image_url: '' };
+        });
+        if (fromLog.length) return fromLog;
+
+        return (this.fullTranscriptLog || [])
+            .filter(entry => entry.image_analysis)
+            .map(entry => entry.image_analysis);
+    },
+
+    resolveAssetUrl(url) {
+        if (!url) return '';
+        if (/^(https?:|data:|blob:)/.test(url)) return url;
+        const baseUrl = typeof API_BASE_URL === 'string' ? API_BASE_URL : '';
+        return `${baseUrl}/${String(url).replace(/^\/+/, '')}`;
     },
 
     updateInterimSummary(data) {
@@ -309,7 +418,8 @@ const UIManager = {
         if (this.els.imageAnalysisResultSection) this.els.imageAnalysisResultSection.style.display = 'none';
         if (this.els.imageAnalysisResultBox) this.els.imageAnalysisResultBox.textContent = '';
         this.els.markmapSvg.innerHTML = ''; this.els.nextAgendaPreview.value = ''; this.pendingMindmapRoot = null;
-        this.els.liveTranscript.innerHTML = ""; this.els.fullTranscript.innerHTML = ""; 
+        if (this.els.liveTranscript) this.els.liveTranscript.innerHTML = "";
+        this.els.fullTranscript.innerHTML = ""; 
         this.chunkCounter = 0; this.fullTranscriptLog = []; this.imageAnalysisLog = []; this.topicToTranscriptId = {}; 
         this.meetingStartTime = Date.now(); this.isAgendaLocked = true;
         this.els.actionButton.disabled = true; this.els.statusText.textContent = '狀態：初始化中...';
