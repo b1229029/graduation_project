@@ -66,6 +66,28 @@ async def audio_handler(websocket):
     upload_file_handle = None
     upload_file_path = None
     cumulative_audio_seconds = 0.0 
+    background_tasks = set()
+
+    async def analyze_image_in_background(base64_data, filename):
+        """Analyze an image without pausing receipt of live audio chunks."""
+        try:
+            loop = asyncio.get_running_loop()
+            analysis_result = await loop.run_in_executor(
+                None, analyze_image_content, base64_data, filename
+            )
+            await websocket.send(json.dumps({
+                "type": "image_analysis_result",
+                "filename": filename,
+                "description": analysis_result
+            }))
+        except Exception as exc:
+            try:
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "message": f"Image analysis failed: {exc}"
+                }))
+            except websockets.exceptions.ConnectionClosed:
+                pass
 
     # 🚀 人名辨識關鍵：初始化當前會議的參與者名單變數
     current_participants = ""
@@ -146,9 +168,11 @@ async def audio_handler(websocket):
                         filename = data.get('filename', 'image.jpg')
                         if base64_data.startswith('data:image'): base64_data = base64_data.split(',')[1]
                         await websocket.send(json.dumps({"type": "upload_progress", "message": "正在分析圖片內容..."}))
-                        loop = asyncio.get_running_loop()
-                        analysis_result = await loop.run_in_executor(None, analyze_image_content, base64_data, filename)
-                        await websocket.send(json.dumps({"type": "image_analysis_result", "filename": filename, "description": analysis_result}))
+                        task = asyncio.create_task(
+                            analyze_image_in_background(base64_data, filename)
+                        )
+                        background_tasks.add(task)
+                        task.add_done_callback(background_tasks.discard)
 
                     elif msg_type == 'schedule_next':
                         # 使用 AI 建議的下次議程與使用者輸入的時間建立 Google Calendar 事件。
