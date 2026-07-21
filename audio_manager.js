@@ -16,6 +16,24 @@ const AudioManager = {
     isRecording: false, intervalId: null,
     onChunkReady: null, onStopCallback: null,
 
+    scheduleNextSlice(delayMs = 30000) {
+        // Start the next 30-second countdown only after the recorder has
+        // actually restarted. A fixed setInterval can fire while MediaRecorder
+        // is still inactive, causing one whole slice to be skipped.
+        if (this.intervalId) clearTimeout(this.intervalId);
+        if (!this.isRecording) return;
+        this.intervalId = setTimeout(() => {
+            this.intervalId = null;
+            if (!this.isRecording || !this.mediaRecorder) return;
+            if (this.mediaRecorder.state === "recording") {
+                this.mediaRecorder.stop();
+            } else {
+                // Defensive retry for browsers that are still changing state.
+                this.scheduleNextSlice(100);
+            }
+        }, delayMs);
+    },
+
     async start(onChunkReady, onStopCallback) {
         // 每次開始錄音都重置舊狀態，避免上一場會議的音訊混入新會議。
         this.reset();
@@ -32,7 +50,10 @@ const AudioManager = {
                 const blob = new Blob(this.recordedChunks, { type: 'audio/webm;codecs=opus' });
                 if (this.onChunkReady && blob.size > 0) this.onChunkReady(blob);
                 this.recordedChunks = [];
-                if (this.isRecording) { this.mediaRecorder.start(); } 
+                if (this.isRecording) {
+                    this.mediaRecorder.start();
+                    this.scheduleNextSlice();
+                }
                 else { if (this.onStopCallback) this.onStopCallback(); }
             };
 
@@ -45,7 +66,7 @@ const AudioManager = {
             this.fullMediaRecorder.start(); 
 
             // 固定 30 秒切一段，讓後端可以邊錄邊轉錄，不用等整場會議結束。
-            this.intervalId = setInterval(() => { if (this.isRecording) this.mediaRecorder.stop(); }, 30000); 
+            this.scheduleNextSlice();
         } catch (err) {
             console.error("麥克風權限錯誤", err);
             throw err;
@@ -55,7 +76,7 @@ const AudioManager = {
     stop() {
         // 停止錄音後，下一次 mediaRecorder.onstop 會走到 onStopCallback 觸發摘要流程。
         this.isRecording = false;
-        if (this.intervalId) { clearInterval(this.intervalId); this.intervalId = null; }
+        if (this.intervalId) { clearTimeout(this.intervalId); this.intervalId = null; }
         if (this.mediaRecorder && this.mediaRecorder.state === "recording") this.mediaRecorder.stop();
         if (this.fullMediaRecorder && this.fullMediaRecorder.state === "recording") this.fullMediaRecorder.stop();
     },
