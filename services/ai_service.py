@@ -111,18 +111,25 @@ def generate_meeting_summary(compiled_context, undiscussed_list=None, template_t
     undiscussed_str = "、".join(undiscussed_list) if undiscussed_list else "無"
 
     templates = {
-        "general": f"一、會議結論：\n二、尚未解決議題：(系統偵測「{undiscussed_str}」可能未討論)\n三、待辦事項：\n四、討論爭議點：\n"
+        "general": f"一、會議結論：\n二、尚未解決議題：(系統偵測「{undiscussed_str}」可能未討論)\n三、待辦事項（事項｜負責人｜逐字稿依據）：\n四、討論爭議點：\n"
     }
     selected_structure = templates.get(template_type, templates["general"])
 
-    participant_hint = f"\n【重要資訊】：本次會議參與者包含：{participants_str}。在整理重點時，若有提及相近發音，請優先視為上述人名，並清楚列出他們對應的待辦事項。" if participants_str else ""
+    participant_hint = f"\n【參與者名單】：{participants_str}。此名單只用於校正逐字稿中的相近人名，不代表這些人都有待辦，也不能作為指派負責人的依據。" if participants_str else ""
     image_hint = "\n【圖片整合強制指示】：若下方會議素材中包含「[會議補充資訊]」或「[圖片分析]」的文字，請你務必將該圖片的內容與這場會議的主題結合，並且『清楚地寫進總結報告與心智圖中』，絕對不可忽略！"
     prompt = f"""
 請嚴格扮演專業的會議秘書。根據以下「會議素材」，產出完整的會議紀錄與心智圖。
 {participant_hint}
 {image_hint}  # 🚀 把圖片提示放進這裡
 
-💡【情境通融指示】：若素材是故事、新聞或單向演講，請變通處理，合理歸納，絕對禁止全部寫「無」。
+💡【情境通融指示】：若素材是故事、新聞或單向演講，可以合理歸納內容；但不得虛構待辦事項或負責人。
+
+【待辦事項與負責人防臆測規則】：
+1. 只有逐字稿明確出現指派語意（例如「小王負責」、「請小王處理」、「這件事交給小王」）時，才能填入該負責人。
+2. 僅提到某人的姓名、該人發言、參與者名單中有此人，均不代表他是負責人。
+3. 若有待辦但沒有明確指派，負責人一律寫「未指定」；若連待辦都未明確形成，寫「無明確待辦」。
+4. 每項待辦都必須附上逐字稿中的原句或最接近的短句作為「逐字稿依據」；找不到依據就不得建立該待辦或指派姓名。
+5. 不得依職稱、專長、對話脈絡或常識猜測負責人，也不得把圖片中出現的人名自動視為負責人。
 
 ⚠️【絕對格式要求】：你必須完全依照下方格式輸出，絕不可省略任何項目，且必須輸出「===MINDMAP_START===」作為分隔線！
 
@@ -168,7 +175,13 @@ def generate_meeting_summary(compiled_context, undiscussed_list=None, template_t
         if not raw_content:
             if retry_count < 2: 
                 print(f"⚠️ 收到空白內容，啟動第 {retry_count + 1} 次重試...")
-                return generate_meeting_summary(compiled_context, undiscussed_list, template_type, retry_count + 1)
+                return generate_meeting_summary(
+                    compiled_context,
+                    undiscussed_list,
+                    template_type,
+                    retry_count + 1,
+                    participants_str
+                )
             else: 
                 return json.dumps({"error": "⚠️ API 連續回傳空白內容，請確認會議長度或稍後再試。"})
 
