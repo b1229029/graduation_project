@@ -1,6 +1,6 @@
 # 「咪挺」– 你的會議紀錄助手
 
-![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue)
+![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![FastAPI](https://img.shields.io/badge/Backend-FastAPI-green)
 ![WebSocket](https://img.shields.io/badge/Realtime-WebSocket-orange)
 ![MySQL](https://img.shields.io/badge/Database-MySQL-blue)
@@ -39,34 +39,32 @@
 
 ### 系統需求
 
-- Python 3.8 或以上版本
+- Python 3.10 或以上版本（建議使用 Python 3.10 或 3.11）
 - MySQL，或已啟用 MySQL 的 XAMPP
 - Chrome、Edge 或其他現代瀏覽器
 - FFmpeg 已加入系統環境變數，或在 Windows 中將 `ffmpeg.exe` / `ffprobe.exe` 放在專案旁
+- 可連線至模型下載網站的網路環境；首次啟動需要下載 Whisper 與句向量模型
+- 數 GB 的可用磁碟空間，用於存放 AI 模型與會議音訊
 - 選用：Google Calendar OAuth 憑證，用於建立行事曆事件
 - 選用：支援 CUDA 的 GPU，可加速 Whisper 推論
 
 ### 建立 Python 虛擬環境
 
 ```powershell
-cd C:\Users\user\Downloads\graduation_project-main\graduation_project-main
+cd <專案目錄>
 python -m venv venv
 .\venv\Scripts\activate
 ```
 
-如果專案後續加入 `requirements.txt`，可使用以下指令安裝：
-
-```powershell
-pip install -r requirements.txt
-```
-
-若目前沒有 `requirements.txt`，可手動安裝主要套件：
+目前專案尚未提供鎖定版本的 `requirements.txt`，請先手動安裝主要套件：
 
 ```powershell
 pip install fastapi uvicorn python-multipart mysql-connector-python passlib python-dotenv
 pip install requests websockets pydub numpy torch openai-whisper opencc-python-reimplemented
 pip install sentence-transformers google-auth google-auth-oauthlib google-api-python-client openai
 ```
+
+建議後續依實際測試環境建立並提交鎖定版本的 `requirements.txt`，避免套件更新後產生相容性問題。
 
 ## 系統設定
 
@@ -98,8 +96,20 @@ DB_CONFIG = {
 ```env
 AI_SERVICE_API_KEY=your_chat_api_key
 VISION_API_KEY=your_vision_api_key
-BASE_URL=https://your-openai-compatible-api-base-url
+BASE_URL=https://your-openai-compatible-api-base-url/v1
 ```
+
+目前程式預設使用以下模型與 API：
+
+- 文字摘要及 RAG 問答：`gpt-oss:20b`，透過 `{BASE_URL}/chat/completions` 呼叫。
+- 圖片辨識：`gpt-5.4-mini`，透過 OpenAI Responses API 呼叫。
+
+提供 `BASE_URL` 的 AI 服務必須同時支援上述模型與 API 格式。若服務使用不同模型名稱，請修改：
+
+- `services/ai_service.py` 中的 `CHAT_MODEL`。
+- `routers/vision.py` 中的 `MODEL`。
+
+`BASE_URL` 請填 API 根網址且不要以 `/` 結尾，否則文字 API 網址可能出現重複的斜線。`AI_SERVICE_API_KEY` 用於摘要、心智圖和 RAG 問答，`VISION_API_KEY` 用於 `/vision/analyze` 圖片辨識。
 
 `.gitignore` 已排除 `.env`、`credentials.json`、`token.json`、`uploads/`、`venv/` 與 Python 快取資料夾，避免敏感資料被提交。
 
@@ -116,12 +126,21 @@ BASE_URL=https://your-openai-compatible-api-base-url
 
 本專案需要同時啟動兩個後端服務：FastAPI REST API 伺服器，以及 WebSocket 即時音訊處理伺服器。
 
+### 首次啟動注意事項
+
+第一次執行 `python listener.py` 時，系統會自動下載並載入：
+
+- Whisper `medium` 語音辨識模型。
+- `BAAI/bge-m3` 句向量模型。
+
+請保持網路連線並預留數 GB 的磁碟空間。模型完成下載及載入前，WebSocket 服務不會開始接受連線。沒有 CUDA GPU 仍可使用，但語音辨識速度可能較慢。
+
 ### 1. 啟動 WebSocket Listener
 
 開啟第一個終端機：
 
 ```powershell
-cd C:\Users\user\Downloads\graduation_project-main\graduation_project-main
+cd <專案目錄>
 .\venv\Scripts\activate
 python listener.py
 ```
@@ -129,15 +148,17 @@ python listener.py
 此服務會啟動即時音訊伺服器：
 
 ```text
-ws://0.0.0.0:8765
+ws://127.0.0.1:8765
 ```
+
+程式內部使用 `0.0.0.0:8765` 監聽所有網路介面；`0.0.0.0` 是伺服器綁定位址，不是瀏覽器應開啟的連線網址。
 
 ### 2. 啟動 FastAPI 後端
 
 開啟第二個終端機：
 
 ```powershell
-cd C:\Users\user\Downloads\graduation_project-main\graduation_project-main
+cd <專案目錄>
 .\venv\Scripts\activate
 uvicorn main:app --reload
 ```
@@ -150,9 +171,27 @@ http://127.0.0.1:8000
 
 FastAPI 啟動時會自動建立需要的資料表。
 
+FastAPI 啟動後，也可以開啟自動產生的 API 文件：
+
+- Swagger UI：<http://127.0.0.1:8000/docs>
+- ReDoc：<http://127.0.0.1:8000/redoc>
+
 ### 3. 開啟前端頁面
 
-可直接用瀏覽器開啟 `login.html`，或將專案放到 Apache / XAMPP 的網站目錄後，以本機網址開啟。
+開啟第三個終端機，在專案根目錄執行：
+
+```powershell
+cd <專案目錄>
+python -m http.server 5500
+```
+
+接著使用瀏覽器開啟：
+
+```text
+http://127.0.0.1:5500/login.html
+```
+
+不建議直接雙擊 HTML 檔案，以避免麥克風權限、跨來源請求或前端資源載入問題。心智圖及 Markdown 顯示會從 CDN 載入 D3、Markmap、Marked 和 DOMPurify，因此使用這些畫面時需要網路連線。
 
 建議使用流程：
 
@@ -196,9 +235,15 @@ FastAPI 啟動時會自動建立需要的資料表。
 | `interim_summary_result` | 後端到前端 | 回傳即時摘要 |
 | `analyze_image` | 前端到後端 | 傳送 base64 圖片進行分析 |
 | `image_analysis_result` | 後端到前端 | 回傳圖片分析文字 |
+| `append_image_result` | 前端到後端 | 將 REST API 完成的圖片分析結果加入會議逐字稿 |
+| `start_file_upload` | 前端到後端 | 通知後端開始接收完整音訊檔案 |
+| `end_file_upload` | 前端到後端 | 通知後端音訊傳送完成並開始轉錄 |
+| `upload_progress` | 後端到前端 | 回傳圖片分析、音訊轉錄或摘要產生進度 |
 | `request_summary` | 前端到後端 | 要求產生最終摘要與心智圖 |
 | `summary_result` | 後端到前端 | 回傳 AI 總結結果 |
 | `schedule_next` | 前端到後端 | 建立 Google Calendar 事件 |
+| `schedule_success` | 後端到前端 | 回傳建立完成的 Google Calendar 事件連結 |
+| `error` | 後端到前端 | 回傳 AI、圖片、音訊或行事曆處理錯誤 |
 
 ## 實作說明
 
@@ -215,7 +260,7 @@ FastAPI 啟動時會自動建立需要的資料表。
 ## 專案結構
 
 ```text
-graduation_project-main/
+graduation_project/
 ├── main.py                         # FastAPI 後端入口
 ├── listener.py                     # WebSocket 即時音訊與 AI 流程伺服器
 ├── database.py                     # MySQL 連線與資料表建立
@@ -240,7 +285,9 @@ graduation_project-main/
 ├── docs/
 │   ├── 需求規格書.pdf
 │   ├── 設計文件書.pdf
-│   └── 4.20專題報告ppt.pdf
+│   ├── 4.20專題報告ppt.pdf
+│   ├── 6.3專題報告ppt.pdf
+│   └── 大三下第二次簡報影片.mov
 ├── uploads/                        # 產生的會議音訊檔，已被 Git 忽略
 ├── .env                            # 本機 API 金鑰，已被 Git 忽略
 ├── credentials.json                # Google OAuth 憑證，已被 Git 忽略
@@ -267,13 +314,17 @@ graduation_project-main/
 - **Google Calendar 排程失敗**：確認 `credentials.json` 存在，且 Google Calendar API 已啟用。
 - **第一次啟動很慢**：`listener.py` 會載入 Whisper 與 sentence-transformer 模型，首次啟動需要較長時間。
 
-## 文件
+## 目前限制與安全提醒
 
-其他專題文件位於 `docs/` 目錄：
+本專案目前以本機開發及專題展示為主，尚未實作完整的正式部署安全機制：
 
-- `需求規格書.pdf`
-- `設計文件書.pdf`
-- `4.20專題報告ppt.pdf`
+- 登入功能尚未使用 JWT 或伺服器端 Session；後端不會驗證每個請求是否來自已登入使用者。
+- API 尚未確認資料夾與會議是否屬於目前使用者；知道資源 ID 的人可能直接查詢、修改或刪除資料。
+- FastAPI CORS 目前允許所有來源呼叫。
+- 音訊、圖片及 WebSocket 上傳尚未設定檔案大小限制。
+- API 金鑰、`credentials.json` 和 `token.json` 都只能保存在本機，不可提交到 Git 或公開分享。
+
+在加入身分驗證、資源存取控制、限制 CORS 來源及上傳大小前，請勿直接部署至公開網路。
 
 ## 授權
 
