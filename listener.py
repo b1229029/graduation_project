@@ -36,7 +36,11 @@ from services.audio_service import (
 OVERLAP_DURATION_MS = 10000
 WS_HOST = "0.0.0.0"
 WS_PORT = 8765
-SILENCE_THRESHOLD = -35
+SILENCE_THRESHOLD = -60
+WHISPER_STREAM_OPTIONS = {
+    "condition_on_previous_text": False,
+    "no_speech_threshold": None,
+}
 WHISPER_INITIAL_PROMPT = "以下是繁體中文會議錄音逐字稿。請只輸出錄音中實際說出的內容。"
 
 def is_prompt_leak(text):
@@ -66,31 +70,10 @@ async def audio_handler(websocket):
     upload_file_handle = None
     upload_file_path = None
     cumulative_audio_seconds = 0.0 
-    background_tasks = set()
-
-    async def analyze_image_in_background(base64_data, filename):
-        """Analyze an image without pausing receipt of live audio chunks."""
-        try:
-            loop = asyncio.get_running_loop()
-            analysis_result = await loop.run_in_executor(
-                None, analyze_image_content, base64_data, filename
-            )
-            await websocket.send(json.dumps({
-                "type": "image_analysis_result",
-                "filename": filename,
-                "description": analysis_result
-            }))
-        except Exception as exc:
-            try:
-                await websocket.send(json.dumps({
-                    "type": "error",
-                    "message": f"Image analysis failed: {exc}"
-                }))
-            except websockets.exceptions.ConnectionClosed:
-                pass
 
     # 🚀 人名辨識關鍵：初始化當前會議的參與者名單變數
     current_participants = ""
+    current_template_type = "general"
 
     try:
         async for message in websocket:
@@ -106,6 +89,7 @@ async def audio_handler(websocket):
                         
                         # 🚀 接收前端傳來的參與者名單
                         current_participants = data.get('participants', "")
+                        current_template_type = "general"
 
                         server_clean_buffer = ""
                         ai_transcript_log = ""
@@ -119,6 +103,7 @@ async def audio_handler(websocket):
                     elif msg_type == 'request_summary':
                         # 會議結束或使用者手動要求時，整理目前累積的所有上下文產生總摘要。
                         template_type = data.get('template', 'general')
+                        current_template_type = template_type
                         compiled_context = ""
                         
                         if ai_interim_summaries:
@@ -168,11 +153,9 @@ async def audio_handler(websocket):
                         filename = data.get('filename', 'image.jpg')
                         if base64_data.startswith('data:image'): base64_data = base64_data.split(',')[1]
                         await websocket.send(json.dumps({"type": "upload_progress", "message": "正在分析圖片內容..."}))
-                        task = asyncio.create_task(
-                            analyze_image_in_background(base64_data, filename)
-                        )
-                        background_tasks.add(task)
-                        task.add_done_callback(background_tasks.discard)
+                        loop = asyncio.get_running_loop()
+                        analysis_result = await loop.run_in_executor(None, analyze_image_content, base64_data, filename)
+                        await websocket.send(json.dumps({"type": "image_analysis_result", "filename": filename, "description": analysis_result}))
 
                     elif msg_type == 'schedule_next':
                         # 使用 AI 建議的下次議程與使用者輸入的時間建立 Google Calendar 事件。
@@ -211,6 +194,7 @@ async def audio_handler(websocket):
                     elif msg_type == 'start_file_upload':
                         # 大檔音訊以上傳模式處理：前端分塊傳送，後端先寫入暫存 webm。
                         is_file_mode = True
+                        current_template_type = data.get('template', current_template_type)
                         upload_file_handle = tempfile.NamedTemporaryFile(delete=False, suffix=".webm")
                         upload_file_path = upload_file_handle.name
                     
@@ -249,7 +233,7 @@ async def audio_handler(websocket):
                             undiscussed_topics = []
                             if current_monitor: undiscussed_topics = current_monitor.get_undiscussed_topics()
                             
-                            json_result = await loop.run_in_executor(None, generate_meeting_summary, compiled_context, undiscussed_topics, "general", 0, current_participants)
+                            json_result = await loop.run_in_executor(None, generate_meeting_summary, compiled_context, undiscussed_topics, current_template_type, 0, current_participants)
                             await websocket.send(json.dumps({"type": "summary_result", "data": json_result}))
 
                         except Exception as e: await websocket.send(json.dumps({"type": "error", "message": str(e)}))
@@ -269,6 +253,13 @@ async def audio_handler(websocket):
                         temp_webm_path = temp_webm.name
                     try:
                         current_audio_chunk = AudioSegment.from_file(temp_webm_path)
+                        chunk_duration = current_audio_chunk.duration_seconds
+                        if current_audio_chunk.dBFS != float("-inf") and current_audio_chunk.dBFS < SILENCE_THRESHOLD:
+                            cumulative_audio_seconds += chunk_duration
+                            continue
+                        if current_audio_chunk.dBFS == float("-inf"):
+                            cumulative_audio_seconds += chunk_duration
+                            continue
                         # 音量低於門檻視為靜音，跳過可減少 Whisper 無效推論。
                         if current_audio_chunk.dBFS < SILENCE_THRESHOLD: continue
                         
@@ -279,6 +270,7 @@ async def audio_handler(websocket):
                         overlap_offset = 0.0
                         
                         if last_audio_segment is not None:
+                            prefix_segment = last_audio_segment[-OVERLAP_DURATION_MS:]
                             # 附上前一段尾端當作上下文，提升切片邊界附近的辨識品質。
                             prefix_segment = last_audio_segment[-OVERLAP_DURATION_MS:]
                             samples_prefix = np.array(prefix_segment.get_array_of_samples()).astype(np.float32) / 32768.0
@@ -287,7 +279,14 @@ async def audio_handler(websocket):
                         last_audio_segment = current_audio_chunk
 
                         loop = asyncio.get_running_loop()
-                        run_transcribe = functools.partial(whisper_model.transcribe, samples_to_process, language="zh", fp16=(DEVICE == "cuda"), initial_prompt=WHISPER_INITIAL_PROMPT)
+                        run_transcribe = functools.partial(
+                            whisper_model.transcribe,
+                            samples_to_process,
+                            language="zh",
+                            fp16=(DEVICE == "cuda"),
+                            initial_prompt=WHISPER_INITIAL_PROMPT,
+                            **WHISPER_STREAM_OPTIONS
+                        )
                         result = await loop.run_in_executor(None, run_transcribe)
                         
                         clean_text_parts = []
@@ -298,10 +297,29 @@ async def audio_handler(websocket):
                                     clean_text_parts.append(segment_text)
                         pure_new_text = "".join(clean_text_parts)
                         final_clean_text = remove_overlap_text(server_clean_buffer, pure_new_text)
+
+                        if not final_clean_text.strip():
+                            retry_transcribe = functools.partial(
+                                whisper_model.transcribe,
+                                samples_current,
+                                language="zh",
+                                fp16=(DEVICE == "cuda"),
+                                initial_prompt=WHISPER_INITIAL_PROMPT,
+                                **WHISPER_STREAM_OPTIONS
+                            )
+                            retry_result = await loop.run_in_executor(None, retry_transcribe)
+                            retry_text_parts = []
+                            for segment in retry_result['segments']:
+                                segment_text = cc.convert(segment['text'])
+                                if not is_prompt_leak(segment_text):
+                                    retry_text_parts.append(segment_text)
+                            retry_text = "".join(retry_text_parts)
+                            final_clean_text = remove_overlap_text(server_clean_buffer, retry_text)
                         
                         if final_clean_text.strip():
                             server_clean_buffer += final_clean_text
                             abs_time = cumulative_audio_seconds # 簡化時間戳
+                            m, s = divmod(int(abs_time), 60)
                             m, s = divmod(int(abs_time), 60)
                             ts_str = f"[{m:02d}:{s:02d}] "
                             

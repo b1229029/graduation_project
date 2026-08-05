@@ -9,7 +9,6 @@ import time
 import requests
 import json
 import os
-import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -96,54 +95,6 @@ def summarize_chunk(chunk_text):
 # ==========================================
 # 生成最終會議紀錄與心智圖
 # ==========================================
-def _has_mindmap_content(mindmap_text):
-    """A heading alone is not a usable mind map."""
-    return bool(re.search(r"(?m)^\s*[-*+]\s+\S+", mindmap_text or ""))
-
-
-def _generate_mindmap_only(compiled_context, summary_text):
-    """Retry mind-map generation separately when the combined output omitted it."""
-    context = compiled_context or ""
-    if len(context) > 16000:
-        context = context[:8000] + "\n……（中段省略）……\n" + context[-8000:]
-
-    prompt = f"""
-請根據會議總結與逐字稿，只輸出 Markdown 心智圖，不要輸出解釋、前言或程式碼圍欄。
-第一行必須是「# 本次會議核心主題」，後續至少包含 3 個「- 」項目。
-每個項目末尾必須有 [MM:SS]；找不到時間時使用 [00:00]。不得虛構會議未提及的內容。
-
-【會議總結】
-{summary_text}
-
-【逐字稿】
-{context}
-"""
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {NEW_API_KEY}"
-    }
-    payload = {
-        "model": CHAT_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.1,
-        "max_tokens": 1800,
-        "stream": False
-    }
-
-    for _ in range(2):
-        try:
-            response = requests.post(CHAT_ENDPOINT, headers=headers, json=payload, timeout=300)
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"].strip()
-            content = content.replace("```markdown", "").replace("```", "").strip()
-            if _has_mindmap_content(content):
-                return content if content.startswith("#") else "# 本次會議核心主題\n" + content
-        except Exception:
-            continue
-
-    return "# 心智圖產生失敗\n- 模型未回傳有效內容，請稍後重新產生 [00:00]"
-
-
 def generate_meeting_summary(compiled_context, undiscussed_list=None, template_type="general", retry_count=0, participants_str=""):
     """依會議上下文產生摘要與心智圖 Markdown。
 
@@ -160,25 +111,39 @@ def generate_meeting_summary(compiled_context, undiscussed_list=None, template_t
     undiscussed_str = "、".join(undiscussed_list) if undiscussed_list else "無"
 
     templates = {
-        "general": f"一、會議結論：\n二、尚未解決議題：(系統偵測「{undiscussed_str}」可能未討論)\n三、待辦事項（事項｜負責人｜逐字稿依據）：\n四、討論爭議點：\n"
+        "general": f"一、會議結論：\n二、尚未解決議題：(系統偵測「{undiscussed_str}」可能未討論)\n三、待辦事項：\n四、討論爭議點：\n",
+        "brainstorming": (
+            "一、核心目標或問題：\n"
+            "二、主要發想方向：\n"
+            "三、可行方案與亮點：\n"
+            "四、疑慮、限制與待驗證假設：\n"
+            "五、後續實驗或行動：\n"
+        ),
+        "interview": (
+            "一、候選人整體評估：\n"
+            "二、專業能力與經驗重點：\n"
+            "三、溝通、合作與文化適配：\n"
+            "四、風險、疑慮與需追問事項：\n"
+            "五、建議決策與後續安排：\n"
+        ),
+        "weekly": (
+            "一、本週完成事項：\n"
+            "二、目前進度與重要數據：\n"
+            "三、遇到的阻礙與需要支援：\n"
+            "四、下週計畫與負責人：\n"
+            f"五、尚未解決議題：(系統偵測「{undiscussed_str}」可能未討論)\n"
+        ),
     }
     selected_structure = templates.get(template_type, templates["general"])
 
-    participant_hint = f"\n【參與者名單】：{participants_str}。此名單只用於校正逐字稿中的相近人名，不代表這些人都有待辦，也不能作為指派負責人的依據。" if participants_str else ""
+    participant_hint = f"\n【重要資訊】：本次會議參與者包含：{participants_str}。在整理重點時，若有提及相近發音，請優先視為上述人名，並清楚列出他們對應的待辦事項。" if participants_str else ""
     image_hint = "\n【圖片整合強制指示】：若下方會議素材中包含「[會議補充資訊]」或「[圖片分析]」的文字，請你務必將該圖片的內容與這場會議的主題結合，並且『清楚地寫進總結報告與心智圖中』，絕對不可忽略！"
     prompt = f"""
 請嚴格扮演專業的會議秘書。根據以下「會議素材」，產出完整的會議紀錄與心智圖。
 {participant_hint}
 {image_hint}  # 🚀 把圖片提示放進這裡
 
-💡【情境通融指示】：若素材是故事、新聞或單向演講，可以合理歸納內容；但不得虛構待辦事項或負責人。
-
-【待辦事項與負責人防臆測規則】：
-1. 只有逐字稿明確出現指派語意（例如「小王負責」、「請小王處理」、「這件事交給小王」）時，才能填入該負責人。
-2. 僅提到某人的姓名、該人發言、參與者名單中有此人，均不代表他是負責人。
-3. 若有待辦但沒有明確指派，負責人一律寫「未指定」；若連待辦都未明確形成，寫「無明確待辦」。
-4. 每項待辦都必須附上逐字稿中的原句或最接近的短句作為「逐字稿依據」；找不到依據就不得建立該待辦或指派姓名。
-5. 不得依職稱、專長、對話脈絡或常識猜測負責人，也不得把圖片中出現的人名自動視為負責人。
+💡【情境通融指示】：若素材是故事、新聞或單向演講，請變通處理，合理歸納，絕對禁止全部寫「無」。
 
 ⚠️【絕對格式要求】：你必須完全依照下方格式輸出，絕不可省略任何項目，且必須輸出「===MINDMAP_START===」作為分隔線！
 
@@ -224,22 +189,15 @@ def generate_meeting_summary(compiled_context, undiscussed_list=None, template_t
         if not raw_content:
             if retry_count < 2: 
                 print(f"⚠️ 收到空白內容，啟動第 {retry_count + 1} 次重試...")
-                return generate_meeting_summary(
-                    compiled_context,
-                    undiscussed_list,
-                    template_type,
-                    retry_count + 1,
-                    participants_str
-                )
+                return generate_meeting_summary(compiled_context, undiscussed_list, template_type, retry_count + 1, participants_str)
             else: 
                 return json.dumps({"error": "⚠️ API 連續回傳空白內容，請確認會議長度或稍後再試。"})
 
         summary_part = raw_content
         mindmap_part = ""
         
-        mindmap_split = re.split(r"={2,}\s*MINDMAP_START\s*={2,}", raw_content, maxsplit=1)
-        if len(mindmap_split) == 2:
-            parts = mindmap_split
+        if "===MINDMAP_START===" in raw_content:
+            parts = raw_content.split("===MINDMAP_START===")
             summary_part = parts[0].strip()
             mindmap_part = parts[1].strip()
         elif "【第二部分：結構化心智圖】" in raw_content:
@@ -264,12 +222,8 @@ def generate_meeting_summary(compiled_context, undiscussed_list=None, template_t
             mindmap_part = mindmap_part.replace(noise, "")
         
         mindmap_part = mindmap_part.strip()
-
-        # Some models omit the delimiter or stop after a heading. Do not treat
-        # that as success; make a smaller, dedicated request for the mind map.
-        if not _has_mindmap_content(mindmap_part):
-            mindmap_part = _generate_mindmap_only(compiled_context, summary_part)
-        elif not mindmap_part.startswith("#"):
+        
+        if not mindmap_part.startswith("#"):
             mindmap_part = "# 會議核心總結\n" + mindmap_part
                 
         return json.dumps({"summary": summary_part, "mindmap": mindmap_part})

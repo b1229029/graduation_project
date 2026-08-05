@@ -122,9 +122,11 @@ UIManager.els.btnUploadImage.onclick = () => {
     const reader = new FileReader();
     reader.onload = function(e) {
         const base64Data = e.target.result;
-        // Do not append directly to the transcript DOM: it is rebuilt from
-        // fullTranscriptLog whenever new speech arrives. The completed image
-        // analysis will be added as a normal transcript entry by the server.
+        const imgContainer = document.createElement('div');
+        imgContainer.style.margin = "10px 0"; imgContainer.style.textAlign = "center";
+        imgContainer.innerHTML = `<img src="${base64Data}" style="max-width: 60%; border-radius: 8px; border: 2px solid #17a2b8;"><p style="font-size:0.8em; color:#666; margin:5px 0;">[已上傳圖片] ${file.name}</p>`;
+        UIManager.els.fullTranscript.appendChild(imgContainer);
+        UIManager.els.fullTranscript.scrollTop = UIManager.els.fullTranscript.scrollHeight;
         if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "analyze_image", image_data: base64Data, filename: file.name }));
     };
     reader.readAsDataURL(file);
@@ -166,7 +168,11 @@ function startFileUpload() {
     // 啟動檔案模式：將大檔切成 1MB ArrayBuffer 分批送到 WebSocket。
     const file = UIManager.els.audioFileInput.files[0]; if (!file) return;
     UIManager.els.statusText.textContent = '狀態：上傳檔案中...'; UIManager.els.actionButton.textContent = '上傳分析中...'; UIManager.els.actionButton.disabled = true;
-    ws.send(JSON.stringify({ type: "start_file_upload", filename: file.name }));
+    ws.send(JSON.stringify({
+        type: "start_file_upload",
+        filename: file.name,
+        template: UIManager.els.templateSelect.value
+    }));
     
     const chunkSize = 1024 * 1024; let offset = 0;
     const reader = new FileReader();
