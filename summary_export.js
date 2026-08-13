@@ -20,88 +20,83 @@ window.SummaryExport = (() => {
         return escapeHtml(text || "").replace(/\n/g, "<br>");
     }
 
-    function normalizeSectionContent(contentHtml, contentText) {
-        if (contentHtml && String(contentHtml).trim()) return String(contentHtml);
-        if (contentText && String(contentText).trim()) return textToHtml(String(contentText));
-        return "";
-    }
+    function getBodyHtml({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText }) {
+        if (documentText && String(documentText).trim()) {
+            return `
+                <h1>${escapeHtml(title)}</h1>
+                <div class="export-document-body">${textToHtml(String(documentText))}</div>
+            `;
+        }
 
-    function createSectionHtml(title, contentHtml, contentText) {
-        const content = normalizeSectionContent(contentHtml, contentText);
-        if (!content) return "";
+        const summaryBlock = summaryHtml && String(summaryHtml).trim()
+            ? String(summaryHtml)
+            : textToHtml(summaryText || "");
+        const imageBlock = imageAnalysisHtml && String(imageAnalysisHtml).trim()
+            ? String(imageAnalysisHtml)
+            : textToHtml(imageAnalysisText || "");
 
         return `
-            <section class="export-section">
-                <h2>${escapeHtml(title)}</h2>
-                <div class="export-section-body">${content}</div>
-            </section>
+            <h1>${escapeHtml(title)}</h1>
+            ${summaryBlock ? `<section class="export-section"><h2>會議總結</h2><div class="export-section-body">${summaryBlock}</div></section>` : ""}
+            ${imageBlock ? `<section class="export-section"><h2>圖片分析結果</h2><div class="export-section-body">${imageBlock}</div></section>` : ""}
         `;
     }
 
-    function buildDocumentHtml({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText }) {
-        const fullDocumentContent = documentText && String(documentText).trim()
-            ? `<div class="export-document-body">${textToHtml(String(documentText))}</div>`
-            : [
-                createSectionHtml("會議總結", summaryHtml, summaryText),
-                createSectionHtml("圖片分析結果", imageAnalysisHtml, imageAnalysisText)
-            ].filter(Boolean).join("");
+    function getStyles() {
+        return `
+            body {
+                font-family: "Microsoft JhengHei", "PingFang TC", sans-serif;
+                color: #1f2933;
+                line-height: 1.7;
+                margin: 32px;
+                background: #fff;
+            }
+            h1 {
+                font-size: 24px;
+                margin: 0 0 24px;
+                padding-bottom: 12px;
+                border-bottom: 2px solid #d9e2ec;
+            }
+            h2 {
+                font-size: 18px;
+                margin: 0 0 12px;
+                color: #102a43;
+            }
+            p, li, div, span {
+                font-size: 14px;
+            }
+            img {
+                max-width: 100%;
+                height: auto;
+                border-radius: 6px;
+            }
+            pre, code, .export-section-body, .export-document-body {
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+            .export-section,
+            .export-document-body {
+                margin-bottom: 28px;
+            }
+            .image-analysis-card,
+            .transcript-image-card {
+                display: block;
+                margin-bottom: 16px;
+            }
+        `;
+    }
 
+    function buildWordHtml(options) {
         return `
             <!DOCTYPE html>
             <html lang="zh-TW">
             <head>
                 <meta charset="UTF-8">
-                <title>${escapeHtml(title)}</title>
-                <style>
-                    body {
-                        font-family: "Microsoft JhengHei", "PingFang TC", sans-serif;
-                        color: #1f2933;
-                        line-height: 1.7;
-                        margin: 32px;
-                        background: #fff;
-                    }
-                    h1 {
-                        font-size: 24px;
-                        margin: 0 0 24px;
-                        padding-bottom: 12px;
-                        border-bottom: 2px solid #d9e2ec;
-                    }
-                    h2 {
-                        font-size: 18px;
-                        margin: 0 0 12px;
-                        color: #102a43;
-                    }
-                    p, li, div, span {
-                        font-size: 14px;
-                    }
-                    img {
-                        max-width: 100%;
-                        height: auto;
-                        border-radius: 6px;
-                    }
-                    pre, code {
-                        white-space: pre-wrap;
-                        word-break: break-word;
-                    }
-                    .export-section,
-                    .export-document-body {
-                        margin-bottom: 28px;
-                    }
-                    .export-section-body,
-                    .export-document-body {
-                        white-space: pre-wrap;
-                        word-break: break-word;
-                    }
-                    .image-analysis-card,
-                    .transcript-image-card {
-                        display: block;
-                        margin-bottom: 16px;
-                    }
-                </style>
+                <title>${escapeHtml(options.title)}</title>
+                <style>${getStyles()}</style>
             </head>
             <body>
-                <h1>${escapeHtml(title)}</h1>
-                ${fullDocumentContent}
+                ${getBodyHtml(options)}
             </body>
             </html>
         `;
@@ -123,13 +118,13 @@ window.SummaryExport = (() => {
         downloadBlob(blob, `${sanitizeFileName(baseFileName)}.md`);
     }
 
-    function exportWord({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText, baseFileName }) {
-        const html = buildDocumentHtml({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText });
+    function exportWord(options) {
+        const html = buildWordHtml(options);
         const blob = new Blob(["\ufeff", html], { type: "application/msword" });
-        downloadBlob(blob, `${sanitizeFileName(baseFileName)}.doc`);
+        downloadBlob(blob, `${sanitizeFileName(options.baseFileName)}.doc`);
     }
 
-    async function exportPdf({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText, baseFileName }) {
+    async function exportPdf(options) {
         if (!window.html2pdf) {
             throw new Error("PDF 匯出套件尚未載入");
         }
@@ -139,24 +134,28 @@ window.SummaryExport = (() => {
         wrapper.style.left = "0";
         wrapper.style.top = "0";
         wrapper.style.width = "794px";
+        wrapper.style.minHeight = "1123px";
+        wrapper.style.padding = "32px";
+        wrapper.style.boxSizing = "border-box";
+        wrapper.style.background = "#ffffff";
+        wrapper.style.color = "#1f2933";
+        wrapper.style.fontFamily = '"Microsoft JhengHei", "PingFang TC", sans-serif';
+        wrapper.style.lineHeight = "1.7";
+        wrapper.style.visibility = "visible";
         wrapper.style.pointerEvents = "none";
         wrapper.style.zIndex = "-1";
-        wrapper.style.background = "#fff";
-        wrapper.style.color = "#000";
-        wrapper.style.visibility = "visible";
-        wrapper.style.overflow = "hidden";
-        wrapper.innerHTML = buildDocumentHtml({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText });
+        wrapper.innerHTML = getBodyHtml(options);
         document.body.appendChild(wrapper);
 
         try {
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             await window.html2pdf()
                 .set({
-                    margin: [12, 12, 12, 12],
-                    filename: `${sanitizeFileName(baseFileName)}.pdf`,
+                    margin: [0, 0, 0, 0],
+                    filename: `${sanitizeFileName(options.baseFileName)}.pdf`,
                     image: { type: "jpeg", quality: 0.98 },
                     html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
-                    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                    jsPDF: { unit: "px", format: [794, Math.max(wrapper.scrollHeight, 1123)], orientation: "portrait" },
                     pagebreak: { mode: ["css", "legacy"] }
                 })
                 .from(wrapper)
