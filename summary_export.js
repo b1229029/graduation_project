@@ -135,18 +135,21 @@ window.SummaryExport = (() => {
         }
 
         const wrapper = document.createElement("div");
-        wrapper.style.position = "absolute";
+        wrapper.style.position = "fixed";
         wrapper.style.left = "0";
         wrapper.style.top = "0";
         wrapper.style.width = "794px";
-        wrapper.style.opacity = "0";
         wrapper.style.pointerEvents = "none";
         wrapper.style.zIndex = "-1";
         wrapper.style.background = "#fff";
+        wrapper.style.color = "#000";
+        wrapper.style.visibility = "visible";
+        wrapper.style.overflow = "hidden";
         wrapper.innerHTML = buildDocumentHtml({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText });
         document.body.appendChild(wrapper);
 
         try {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             await window.html2pdf()
                 .set({
                     margin: [12, 12, 12, 12],
