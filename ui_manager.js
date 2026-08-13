@@ -23,7 +23,7 @@ const UIManager = {
 
         const ids = ['actionButton', 'statusText', 'live-transcript', 'full-transcript', 'agenda-list', 'warning-msg', 
                      'new-topic-input', 'add-topic-btn', 'input-area', 'file-upload-area', 'audio-file-input', 
-                     'ai-summary-box', 'template-select', 'markmap-svg', 'downloadBtn', 'downloadWordBtn', 'downloadPdfBtn', 'copyBtn', 
+                     'ai-summary-box', 'template-select', 'markmap-svg', 'downloadBtn', 'downloadWordBtn', 'copyBtn', 
                      'image-analysis-result-section', 'image-analysis-result-box',
                      'next-agenda-preview', 'next-meeting-time', 'next-emails', 'btn-schedule-next', 
                      'cal-status', 'btn-upload-image', 'image-input', 'img-status', 'interim-summary-box', 'mindmap-audio-player'];
@@ -55,15 +55,6 @@ const UIManager = {
             this.els.downloadWordBtn = wordBtn;
         }
 
-        if (!this.els.downloadPdfBtn) {
-            const pdfBtn = document.createElement('button');
-            pdfBtn.id = 'downloadPdfBtn';
-            pdfBtn.className = 'btn-info';
-            pdfBtn.disabled = true;
-            pdfBtn.textContent = '下載 PDF';
-            buttonGroup.insertBefore(pdfBtn, this.els.copyBtn || null);
-            this.els.downloadPdfBtn = pdfBtn;
-        }
     },
 
     bindEvents() {
@@ -477,7 +468,6 @@ const UIManager = {
 
         this.els.downloadBtn.disabled = false;
         if (this.els.downloadWordBtn) this.els.downloadWordBtn.disabled = false;
-        if (this.els.downloadPdfBtn) this.els.downloadPdfBtn.disabled = false;
         this.els.copyBtn.disabled = false;
         this.els.statusText.textContent = '狀態：報告已生成！請切換分頁查看。'; 
         this.els.actionButton.textContent = '會議已結束 (點擊切換查看結果)';
@@ -514,7 +504,6 @@ const UIManager = {
         this.currentSummaryData = '';
         if (this.els.downloadBtn) this.els.downloadBtn.disabled = true;
         if (this.els.downloadWordBtn) this.els.downloadWordBtn.disabled = true;
-        if (this.els.downloadPdfBtn) this.els.downloadPdfBtn.disabled = true;
         if (this.els.copyBtn) this.els.copyBtn.disabled = true;
         this.els.markmapSvg.innerHTML = ''; this.els.nextAgendaPreview.value = ''; this.pendingMindmapRoot = null;
         if (this.els.liveTranscript) this.els.liveTranscript.innerHTML = "";

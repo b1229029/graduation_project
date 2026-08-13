@@ -124,51 +124,9 @@ window.SummaryExport = (() => {
         downloadBlob(blob, `${sanitizeFileName(options.baseFileName)}.doc`);
     }
 
-    async function exportPdf(options) {
-        if (!window.html2pdf) {
-            throw new Error("PDF 匯出套件尚未載入");
-        }
-
-        const wrapper = document.createElement("div");
-        wrapper.style.position = "fixed";
-        wrapper.style.left = "0";
-        wrapper.style.top = "0";
-        wrapper.style.width = "794px";
-        wrapper.style.minHeight = "1123px";
-        wrapper.style.padding = "32px";
-        wrapper.style.boxSizing = "border-box";
-        wrapper.style.background = "#ffffff";
-        wrapper.style.color = "#1f2933";
-        wrapper.style.fontFamily = '"Microsoft JhengHei", "PingFang TC", sans-serif';
-        wrapper.style.lineHeight = "1.7";
-        wrapper.style.visibility = "visible";
-        wrapper.style.pointerEvents = "none";
-        wrapper.style.zIndex = "-1";
-        wrapper.innerHTML = getBodyHtml(options);
-        document.body.appendChild(wrapper);
-
-        try {
-            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-            await window.html2pdf()
-                .set({
-                    margin: [0, 0, 0, 0],
-                    filename: `${sanitizeFileName(options.baseFileName)}.pdf`,
-                    image: { type: "jpeg", quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
-                    jsPDF: { unit: "px", format: [794, Math.max(wrapper.scrollHeight, 1123)], orientation: "portrait" },
-                    pagebreak: { mode: ["css", "legacy"] }
-                })
-                .from(wrapper)
-                .save();
-        } finally {
-            document.body.removeChild(wrapper);
-        }
-    }
-
     return {
         exportMarkdown,
         exportWord,
-        exportPdf,
         textToHtml,
         sanitizeFileName
     };

@@ -13,7 +13,6 @@
     <script src="https://fastly.jsdelivr.net/npm/markmap-view@0.15.4/dist/browser/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="summary_export.js?v=2026-08-13-export"></script>
 
     <style>
@@ -331,7 +330,7 @@
         }
 
         function toggleSummaryExportButtons(disabled) {
-            ['history-download-md', 'history-download-word', 'history-download-pdf'].forEach(id => {
+            ['history-download-md', 'history-download-word'].forEach(id => {
                 const button = document.getElementById(id);
                 if (button) button.disabled = disabled;
             });
@@ -352,8 +351,7 @@
 
             const buttons = [
                 { id: 'history-download-md', label: '下載 Markdown' },
-                { id: 'history-download-word', label: '下載 Word' },
-                { id: 'history-download-pdf', label: '下載 PDF' }
+                { id: 'history-download-word', label: '下載 Word' }
             ];
 
             buttons.forEach(({ id, label }) => {
@@ -385,26 +383,6 @@
                 window.SummaryExport.exportWord(getSummaryExportOptions());
             };
 
-            document.getElementById('history-download-pdf').onclick = async () => {
-                if (!window.SummaryExport) {
-                    alert("匯出功能尚未載入。");
-                    return;
-                }
-
-                const button = document.getElementById('history-download-pdf');
-                const originalText = button.textContent;
-                button.disabled = true;
-                button.textContent = '產生 PDF 中...';
-                try {
-                    await window.SummaryExport.exportPdf(getSummaryExportOptions());
-                } catch (error) {
-                    console.error(error);
-                    alert(`PDF 匯出失敗：${error.message}`);
-                } finally {
-                    button.disabled = false;
-                    button.textContent = originalText;
-                }
-            };
         }
 
         // --- 分頁切換邏輯 ---
