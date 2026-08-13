@@ -23,7 +23,7 @@ const UIManager = {
 
         const ids = ['actionButton', 'statusText', 'live-transcript', 'full-transcript', 'agenda-list', 'warning-msg', 
                      'new-topic-input', 'add-topic-btn', 'input-area', 'file-upload-area', 'audio-file-input', 
-                     'ai-summary-box', 'template-select', 'markmap-svg', 'downloadBtn', 'copyBtn', 
+                     'ai-summary-box', 'template-select', 'markmap-svg', 'downloadBtn', 'downloadWordBtn', 'downloadPdfBtn', 'copyBtn', 
                      'image-analysis-result-section', 'image-analysis-result-box',
                      'next-agenda-preview', 'next-meeting-time', 'next-emails', 'btn-schedule-next', 
                      'cal-status', 'btn-upload-image', 'image-input', 'img-status', 'interim-summary-box', 'mindmap-audio-player'];
@@ -33,9 +33,37 @@ const UIManager = {
             this.els[key] = document.getElementById(id);
         });
 
+        this.ensureSummaryExportButtons();
         this.bindEvents();
         this.renderAgendaList();
         this.toggleMode(); 
+    },
+
+    ensureSummaryExportButtons() {
+        if (!this.els.downloadBtn) return;
+
+        const buttonGroup = this.els.downloadBtn.parentElement;
+        if (!buttonGroup) return;
+
+        if (!this.els.downloadWordBtn) {
+            const wordBtn = document.createElement('button');
+            wordBtn.id = 'downloadWordBtn';
+            wordBtn.className = 'btn-info';
+            wordBtn.disabled = true;
+            wordBtn.textContent = '下載 Word';
+            buttonGroup.insertBefore(wordBtn, this.els.copyBtn || null);
+            this.els.downloadWordBtn = wordBtn;
+        }
+
+        if (!this.els.downloadPdfBtn) {
+            const pdfBtn = document.createElement('button');
+            pdfBtn.id = 'downloadPdfBtn';
+            pdfBtn.className = 'btn-info';
+            pdfBtn.disabled = true;
+            pdfBtn.textContent = '下載 PDF';
+            buttonGroup.insertBefore(pdfBtn, this.els.copyBtn || null);
+            this.els.downloadPdfBtn = pdfBtn;
+        }
     },
 
     bindEvents() {
@@ -59,9 +87,45 @@ const UIManager = {
 
         if (this.els.downloadBtn) {
             this.els.downloadBtn.onclick = () => {
+                if (window.SummaryExport) {
+                    window.SummaryExport.exportMarkdown(this.currentSummaryData, this.getSummaryFileName());
+                    return;
+                }
+
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(new Blob([this.currentSummaryData], { type: 'text/markdown' }));
                 a.download = 'meeting_notes.md'; a.click();
+            };
+        }
+        if (this.els.downloadWordBtn) {
+            this.els.downloadWordBtn.onclick = () => {
+                if (!window.SummaryExport) {
+                    alert("Word 匯出功能尚未載入。");
+                    return;
+                }
+                window.SummaryExport.exportWord(this.getSummaryExportOptions());
+            };
+        }
+        if (this.els.downloadPdfBtn) {
+            this.els.downloadPdfBtn.onclick = async () => {
+                if (!window.SummaryExport) {
+                    alert("PDF 匯出功能尚未載入。");
+                    return;
+                }
+
+                const button = this.els.downloadPdfBtn;
+                const originalText = button.textContent;
+                button.disabled = true;
+                button.textContent = '產生 PDF 中...';
+                try {
+                    await window.SummaryExport.exportPdf(this.getSummaryExportOptions());
+                } catch (error) {
+                    console.error(error);
+                    alert(`PDF 匯出失敗：${error.message}`);
+                } finally {
+                    button.disabled = false;
+                    button.textContent = originalText;
+                }
             };
         }
         if (this.els.copyBtn) this.els.copyBtn.onclick = () => navigator.clipboard.writeText(this.currentSummaryData).then(() => alert("已複製！"));
@@ -317,6 +381,26 @@ const UIManager = {
         return `${baseUrl}/${String(url).replace(/^\/+/, '')}`;
     },
 
+    getSummaryFileName() {
+        const topic = typeof currentMeetingTopic === 'string' ? currentMeetingTopic.trim() : '';
+        const meetingId = typeof currentMeetingId === 'string' ? currentMeetingId.trim() : '';
+        return topic || (meetingId ? `meeting_${meetingId}_summary` : 'meeting_summary');
+    },
+
+    getSummaryExportOptions() {
+        const summaryHtml = this.els.aiSummaryBox ? this.els.aiSummaryBox.innerHTML : '';
+        const imageAnalysisHtml = this.els.imageAnalysisResultSection && this.els.imageAnalysisResultSection.style.display !== 'none'
+            ? (this.els.imageAnalysisResultBox ? this.els.imageAnalysisResultBox.innerHTML : '')
+            : '';
+
+        return {
+            title: this.getSummaryFileName(),
+            baseFileName: this.getSummaryFileName(),
+            summaryHtml,
+            imageAnalysisHtml
+        };
+    },
+
     updateInterimSummary(data) {
         // 即時摘要採最新在上的方式追加，方便使用者看到最近一段會議重點。
         if(!this.els.interimSummaryBox) return;
@@ -384,7 +468,10 @@ const UIManager = {
             } catch (err) { console.error("心智圖渲染失敗", err); }
         } else if (res && res.mindmap) { this.els.markmapSvg.innerHTML = '<text x="20" y="40" fill="red">⚠️ 心智圖套件載入失敗</text>'; }
 
-        this.els.downloadBtn.disabled = false; this.els.copyBtn.disabled = false;
+        this.els.downloadBtn.disabled = false;
+        if (this.els.downloadWordBtn) this.els.downloadWordBtn.disabled = false;
+        if (this.els.downloadPdfBtn) this.els.downloadPdfBtn.disabled = false;
+        this.els.copyBtn.disabled = false;
         this.els.statusText.textContent = '狀態：報告已生成！請切換分頁查看。'; 
         this.els.actionButton.textContent = '會議已結束 (點擊切換查看結果)';
         this.els.actionButton.className = 'btn-success'; 
@@ -417,6 +504,11 @@ const UIManager = {
         this.els.aiSummaryBox.innerHTML = '<div style="text-align:center; margin-top:50px; color:#888;">生成中...</div>';
         if (this.els.imageAnalysisResultSection) this.els.imageAnalysisResultSection.style.display = 'none';
         if (this.els.imageAnalysisResultBox) this.els.imageAnalysisResultBox.textContent = '';
+        this.currentSummaryData = '';
+        if (this.els.downloadBtn) this.els.downloadBtn.disabled = true;
+        if (this.els.downloadWordBtn) this.els.downloadWordBtn.disabled = true;
+        if (this.els.downloadPdfBtn) this.els.downloadPdfBtn.disabled = true;
+        if (this.els.copyBtn) this.els.copyBtn.disabled = true;
         this.els.markmapSvg.innerHTML = ''; this.els.nextAgendaPreview.value = ''; this.pendingMindmapRoot = null;
         if (this.els.liveTranscript) this.els.liveTranscript.innerHTML = "";
         this.els.fullTranscript.innerHTML = ""; 

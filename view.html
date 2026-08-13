@@ -13,6 +13,8 @@
     <script src="https://fastly.jsdelivr.net/npm/markmap-view@0.15.4/dist/browser/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="summary_export.js?v=2026-08-13-export"></script>
 
     <style>
         /* 與 index.html 保持相近的頁籤布局，但此頁以閱讀歷史資料為主。 */
@@ -149,6 +151,7 @@
         let mindmapTimestamps = [];
         let targetEndTime = null;
         let pendingMindmapRoot = null;
+        let currentMeetingTitle = '';
 
         function escapeHtml(value) {
             return String(value || "")
@@ -302,6 +305,105 @@
             return items.map(item => renderImageCard(item, 'image-analysis')).join('');
         }
 
+        function getSummaryFileName() {
+            return (window.SummaryExport && window.SummaryExport.sanitizeFileName(currentMeetingTitle || `meeting_${meetingId}_summary`))
+                || (currentMeetingTitle || `meeting_${meetingId}_summary`);
+        }
+
+        function getSummaryExportOptions() {
+            const summaryText = document.getElementById('summary-content').innerText || '';
+            const imageSection = document.getElementById('image-analysis-section');
+            const imageHtml = imageSection && imageSection.style.display !== 'none'
+                ? document.getElementById('image-analysis-content').innerHTML
+                : '';
+
+            return {
+                title: currentMeetingTitle || `會議 ${meetingId} 總結`,
+                baseFileName: getSummaryFileName(),
+                summaryHtml: window.SummaryExport ? window.SummaryExport.textToHtml(summaryText) : escapeHtml(summaryText).replace(/\n/g, '<br>'),
+                imageAnalysisHtml: imageHtml
+            };
+        }
+
+        function toggleSummaryExportButtons(disabled) {
+            ['history-download-md', 'history-download-word', 'history-download-pdf'].forEach(id => {
+                const button = document.getElementById(id);
+                if (button) button.disabled = disabled;
+            });
+        }
+
+        function ensureSummaryExportButtons() {
+            if (document.getElementById('summary-export-tools')) return;
+
+            const summaryCard = document.querySelector('#page-summary .card');
+            const summaryTitle = summaryCard ? summaryCard.querySelector('h3') : null;
+            if (!summaryCard || !summaryTitle) return;
+
+            const tools = document.createElement('div');
+            tools.id = 'summary-export-tools';
+            tools.style.display = 'flex';
+            tools.style.gap = '8px';
+            tools.style.marginBottom = '16px';
+
+            const buttons = [
+                { id: 'history-download-md', label: '下載 Markdown' },
+                { id: 'history-download-word', label: '下載 Word' },
+                { id: 'history-download-pdf', label: '下載 PDF' }
+            ];
+
+            buttons.forEach(({ id, label }) => {
+                const button = document.createElement('button');
+                button.id = id;
+                button.className = 'btn-primary';
+                button.disabled = true;
+                button.textContent = label;
+                button.style.padding = '8px 12px';
+                tools.appendChild(button);
+            });
+
+            summaryTitle.insertAdjacentElement('afterend', tools);
+
+            document.getElementById('history-download-md').onclick = () => {
+                if (!window.SummaryExport) {
+                    alert("匯出功能尚未載入。");
+                    return;
+                }
+                const summaryText = document.getElementById('summary-content').innerText || '';
+                const imageText = document.getElementById('image-analysis-content').innerText || '';
+                const markdown = imageText ? `${summaryText}\n\n## 圖片分析結果\n${imageText}` : summaryText;
+                window.SummaryExport.exportMarkdown(markdown, getSummaryFileName());
+            };
+
+            document.getElementById('history-download-word').onclick = () => {
+                if (!window.SummaryExport) {
+                    alert("匯出功能尚未載入。");
+                    return;
+                }
+                window.SummaryExport.exportWord(getSummaryExportOptions());
+            };
+
+            document.getElementById('history-download-pdf').onclick = async () => {
+                if (!window.SummaryExport) {
+                    alert("匯出功能尚未載入。");
+                    return;
+                }
+
+                const button = document.getElementById('history-download-pdf');
+                const originalText = button.textContent;
+                button.disabled = true;
+                button.textContent = '產生 PDF 中...';
+                try {
+                    await window.SummaryExport.exportPdf(getSummaryExportOptions());
+                } catch (error) {
+                    console.error(error);
+                    alert(`PDF 匯出失敗：${error.message}`);
+                } finally {
+                    button.disabled = false;
+                    button.textContent = originalText;
+                }
+            };
+        }
+
         // --- 分頁切換邏輯 ---
         function switchPage(pageName) {
             // 切換逐字稿、摘要、心智圖與聊天頁籤；心智圖頁顯示時重新 fit。
@@ -329,6 +431,7 @@
                 const response = await fetch(`${API_BASE_URL}/meetings/${meetingId}`);
                 const data = await response.json();
 
+                currentMeetingTitle = data.title || '';
                 document.getElementById('navbar-title').innerText = ` ${data.title}`;
                 document.getElementById('transcript-content').innerHTML = renderTranscriptText(data.transcript_text);
                 document.getElementById('summary-content').innerText = data.summary_text || "無總結資料";
@@ -376,6 +479,7 @@
 
                     window.mm = Markmap.create(document.getElementById('markmap-svg'), null, root);
                 }
+                toggleSummaryExportButtons(false);
             } catch (err) { console.error(err); }
         }
 
@@ -462,7 +566,10 @@
         sendBtn.onclick = handleSend;
         chatInput.onkeypress = (e) => { if(e.key === 'Enter') handleSend(); };
 
-        window.onload = loadMeetingData;
+        window.onload = () => {
+            ensureSummaryExportButtons();
+            loadMeetingData();
+        };
     </script>
 </body>
 </html>
