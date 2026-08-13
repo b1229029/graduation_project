@@ -329,6 +329,41 @@
             };
         }
 
+        function getMindmapFileName() {
+            return (window.SummaryExport && window.SummaryExport.sanitizeFileName(currentMeetingTitle || `meeting_${meetingId}_mindmap`))
+                || (currentMeetingTitle || `meeting_${meetingId}_mindmap`);
+        }
+
+        function downloadMindmapSvg() {
+            const svg = document.getElementById('markmap-svg');
+            if (!svg || !svg.childNodes.length) {
+                alert("目前沒有可下載的心智圖。");
+                return;
+            }
+
+            const svgClone = svg.cloneNode(true);
+            const width = svg.clientWidth || 1200;
+            const height = svg.clientHeight || 800;
+            svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            svgClone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+            svgClone.setAttribute('width', String(width));
+            svgClone.setAttribute('height', String(height));
+            if (!svgClone.getAttribute('viewBox')) {
+                svgClone.setAttribute('viewBox', `0 0 ${width} ${height}`);
+            }
+
+            const svgText = `<?xml version="1.0" encoding="UTF-8"?>\n${svgClone.outerHTML}`;
+            const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${getMindmapFileName()}.svg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
         function toggleSummaryExportButtons(disabled) {
             ['history-download-md', 'history-download-word'].forEach(id => {
                 const button = document.getElementById(id);
@@ -386,6 +421,34 @@
         }
 
         // --- 分頁切換邏輯 ---
+        function ensureMindmapExportButton() {
+            if (document.getElementById('history-download-mindmap-svg')) return;
+
+            const mindmapCard = document.querySelector('#page-mindmap .card');
+            const header = mindmapCard ? mindmapCard.querySelector('div[style*="justify-content: space-between"]') : null;
+            if (!header) return;
+
+            const button = document.createElement('button');
+            button.id = 'history-download-mindmap-svg';
+            button.className = 'btn-primary';
+            button.disabled = true;
+            button.textContent = '下載 SVG';
+            button.style.padding = '8px 12px';
+            button.onclick = downloadMindmapSvg;
+
+            const rightGroup = document.createElement('div');
+            rightGroup.style.display = 'flex';
+            rightGroup.style.alignItems = 'center';
+            rightGroup.style.gap = '10px';
+
+            const existingRight = header.lastElementChild;
+            if (existingRight && existingRight !== header.firstElementChild) {
+                rightGroup.appendChild(existingRight);
+            }
+            rightGroup.appendChild(button);
+            header.appendChild(rightGroup);
+        }
+
         function switchPage(pageName) {
             // 切換逐字稿、摘要、心智圖與聊天頁籤；心智圖頁顯示時重新 fit。
             document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
@@ -437,6 +500,34 @@
                     };
                 }
 
+        function ensureMindmapExportButton() {
+            if (document.getElementById('history-download-mindmap-svg')) return;
+
+            const mindmapCard = document.querySelector('#page-mindmap .card');
+            const header = mindmapCard ? mindmapCard.querySelector('div[style*="justify-content: space-between"]') : null;
+            if (!header) return;
+
+            const button = document.createElement('button');
+            button.id = 'history-download-mindmap-svg';
+            button.className = 'btn-primary';
+            button.disabled = true;
+            button.textContent = '下載 SVG';
+            button.style.padding = '8px 12px';
+            button.onclick = downloadMindmapSvg;
+
+            const rightGroup = document.createElement('div');
+            rightGroup.style.display = 'flex';
+            rightGroup.style.alignItems = 'center';
+            rightGroup.style.gap = '10px';
+
+            const existingRight = header.lastElementChild;
+            if (existingRight && existingRight !== header.firstElementChild) {
+                rightGroup.appendChild(existingRight);
+            }
+            rightGroup.appendChild(button);
+            header.appendChild(rightGroup);
+        }
+
                 // 心智圖渲染
                 if (data.mindmap_data) {
                     const { Markmap, Transformer } = window.markmap;
@@ -460,6 +551,8 @@
 
                     window.mm = Markmap.create(document.getElementById('markmap-svg'), null, root);
                 }
+                const mindmapDownloadBtn = document.getElementById('history-download-mindmap-svg');
+                if (mindmapDownloadBtn) mindmapDownloadBtn.disabled = !data.mindmap_data;
                 toggleSummaryExportButtons(false);
             } catch (err) { console.error(err); }
         }
@@ -549,6 +642,7 @@
 
         window.onload = () => {
             ensureSummaryExportButtons();
+            ensureMindmapExportButton();
             loadMeetingData();
         };
     </script>

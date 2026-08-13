@@ -34,6 +34,7 @@ const UIManager = {
         });
 
         this.ensureSummaryExportButtons();
+        this.ensureMindmapExportButton();
         this.bindEvents();
         this.renderAgendaList();
         this.toggleMode(); 
@@ -55,6 +56,34 @@ const UIManager = {
             this.els.downloadWordBtn = wordBtn;
         }
 
+    },
+
+    ensureMindmapExportButton() {
+        if (!this.els.markmapSvg) return;
+
+        const mindmapCard = document.querySelector('#page-mindmap .card');
+        const header = mindmapCard ? mindmapCard.querySelector('div[style*="justify-content: space-between"]') : null;
+        if (!header || document.getElementById('downloadMindmapSvgBtn')) return;
+
+        const button = document.createElement('button');
+        button.id = 'downloadMindmapSvgBtn';
+        button.className = 'btn-info';
+        button.disabled = true;
+        button.textContent = '下載 SVG';
+
+        const toolbar = document.createElement('div');
+        toolbar.style.display = 'flex';
+        toolbar.style.alignItems = 'center';
+        toolbar.style.gap = '10px';
+
+        const existingRight = header.lastElementChild;
+        if (existingRight && existingRight !== header.firstElementChild) {
+            toolbar.appendChild(existingRight);
+        }
+        toolbar.appendChild(button);
+        header.appendChild(toolbar);
+
+        this.els.downloadMindmapSvgBtn = button;
     },
 
     bindEvents() {
@@ -96,6 +125,9 @@ const UIManager = {
                 }
                 window.SummaryExport.exportWord(this.getSummaryExportOptions());
             };
+        }
+        if (this.els.downloadMindmapSvgBtn) {
+            this.els.downloadMindmapSvgBtn.onclick = () => this.downloadMindmapSvg();
         }
         if (this.els.downloadPdfBtn) {
             this.els.downloadPdfBtn.onclick = async () => {
@@ -378,6 +410,41 @@ const UIManager = {
         return topic || (meetingId ? `meeting_${meetingId}_summary` : 'meeting_summary');
     },
 
+    getMindmapFileName() {
+        const topic = typeof currentMeetingTopic === 'string' ? currentMeetingTopic.trim() : '';
+        const meetingId = typeof currentMeetingId === 'string' ? currentMeetingId.trim() : '';
+        return topic || (meetingId ? `meeting_${meetingId}_mindmap` : 'meeting_mindmap');
+    },
+
+    downloadMindmapSvg() {
+        if (!this.els.markmapSvg || !this.els.markmapSvg.childNodes.length) {
+            alert("目前沒有可下載的心智圖。");
+            return;
+        }
+
+        const svgClone = this.els.markmapSvg.cloneNode(true);
+        const width = this.els.markmapSvg.clientWidth || 1200;
+        const height = this.els.markmapSvg.clientHeight || 800;
+        svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        svgClone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+        svgClone.setAttribute('width', String(width));
+        svgClone.setAttribute('height', String(height));
+        if (!svgClone.getAttribute('viewBox')) {
+            svgClone.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        }
+
+        const svgText = `<?xml version="1.0" encoding="UTF-8"?>\n${svgClone.outerHTML}`;
+        const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${this.getMindmapFileName()}.svg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+
     getSummaryExportOptions() {
         const summaryHtml = this.els.aiSummaryBox ? this.els.aiSummaryBox.innerHTML : '';
         const summaryText = this.els.aiSummaryBox ? this.els.aiSummaryBox.innerText : this.currentSummaryData;
@@ -468,6 +535,7 @@ const UIManager = {
 
         this.els.downloadBtn.disabled = false;
         if (this.els.downloadWordBtn) this.els.downloadWordBtn.disabled = false;
+        if (this.els.downloadMindmapSvgBtn) this.els.downloadMindmapSvgBtn.disabled = !(res && res.mindmap);
         this.els.copyBtn.disabled = false;
         this.els.statusText.textContent = '狀態：報告已生成！請切換分頁查看。'; 
         this.els.actionButton.textContent = '會議已結束 (點擊切換查看結果)';
@@ -504,6 +572,7 @@ const UIManager = {
         this.currentSummaryData = '';
         if (this.els.downloadBtn) this.els.downloadBtn.disabled = true;
         if (this.els.downloadWordBtn) this.els.downloadWordBtn.disabled = true;
+        if (this.els.downloadMindmapSvgBtn) this.els.downloadMindmapSvgBtn.disabled = true;
         if (this.els.copyBtn) this.els.copyBtn.disabled = true;
         this.els.markmapSvg.innerHTML = ''; this.els.nextAgendaPreview.value = ''; this.pendingMindmapRoot = null;
         if (this.els.liveTranscript) this.els.liveTranscript.innerHTML = "";
