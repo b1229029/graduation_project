@@ -389,15 +389,22 @@ const UIManager = {
 
     getSummaryExportOptions() {
         const summaryHtml = this.els.aiSummaryBox ? this.els.aiSummaryBox.innerHTML : '';
+        const summaryText = this.els.aiSummaryBox ? this.els.aiSummaryBox.innerText : this.currentSummaryData;
         const imageAnalysisHtml = this.els.imageAnalysisResultSection && this.els.imageAnalysisResultSection.style.display !== 'none'
             ? (this.els.imageAnalysisResultBox ? this.els.imageAnalysisResultBox.innerHTML : '')
+            : '';
+        const imageAnalysisText = this.els.imageAnalysisResultSection && this.els.imageAnalysisResultSection.style.display !== 'none'
+            ? (this.els.imageAnalysisResultBox ? this.els.imageAnalysisResultBox.innerText : '')
             : '';
 
         return {
             title: this.getSummaryFileName(),
             baseFileName: this.getSummaryFileName(),
+            documentText: this.currentSummaryData || summaryText || '',
             summaryHtml,
-            imageAnalysisHtml
+            summaryText,
+            imageAnalysisHtml,
+            imageAnalysisText
         };
     },
 

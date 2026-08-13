@@ -316,12 +316,17 @@
             const imageHtml = imageSection && imageSection.style.display !== 'none'
                 ? document.getElementById('image-analysis-content').innerHTML
                 : '';
+            const imageAnalysisText = document.getElementById('image-analysis-content').innerText || '';
+            const documentText = imageAnalysisText ? `${summaryText}\n\n## 圖片分析結果\n${imageAnalysisText}` : summaryText;
 
             return {
                 title: currentMeetingTitle || `會議 ${meetingId} 總結`,
                 baseFileName: getSummaryFileName(),
+                documentText,
                 summaryHtml: window.SummaryExport ? window.SummaryExport.textToHtml(summaryText) : escapeHtml(summaryText).replace(/\n/g, '<br>'),
-                imageAnalysisHtml: imageHtml
+                summaryText,
+                imageAnalysisHtml: imageHtml,
+                imageAnalysisText
             };
         }
 
@@ -369,9 +374,7 @@
                     return;
                 }
                 const summaryText = document.getElementById('summary-content').innerText || '';
-                const imageText = document.getElementById('image-analysis-content').innerText || '';
-                const markdown = imageText ? `${summaryText}\n\n## 圖片分析結果\n${imageText}` : summaryText;
-                window.SummaryExport.exportMarkdown(markdown, getSummaryFileName());
+                window.SummaryExport.exportMarkdown(getSummaryExportOptions().documentText, getSummaryFileName());
             };
 
             document.getElementById('history-download-word').onclick = () => {

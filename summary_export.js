@@ -16,17 +16,36 @@ window.SummaryExport = (() => {
             .replace(/'/g, "&#039;");
     }
 
-    function createSectionHtml(title, contentHtml) {
-        if (!contentHtml) return "";
+    function textToHtml(text) {
+        return escapeHtml(text || "").replace(/\n/g, "<br>");
+    }
+
+    function normalizeSectionContent(contentHtml, contentText) {
+        if (contentHtml && String(contentHtml).trim()) return String(contentHtml);
+        if (contentText && String(contentText).trim()) return textToHtml(String(contentText));
+        return "";
+    }
+
+    function createSectionHtml(title, contentHtml, contentText) {
+        const content = normalizeSectionContent(contentHtml, contentText);
+        if (!content) return "";
+
         return `
             <section class="export-section">
                 <h2>${escapeHtml(title)}</h2>
-                <div class="export-section-body">${contentHtml}</div>
+                <div class="export-section-body">${content}</div>
             </section>
         `;
     }
 
-    function buildDocumentHtml({ title, summaryHtml, imageAnalysisHtml }) {
+    function buildDocumentHtml({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText }) {
+        const fullDocumentContent = documentText && String(documentText).trim()
+            ? `<div class="export-document-body">${textToHtml(String(documentText))}</div>`
+            : [
+                createSectionHtml("會議總結", summaryHtml, summaryText),
+                createSectionHtml("圖片分析結果", imageAnalysisHtml, imageAnalysisText)
+            ].filter(Boolean).join("");
+
         return `
             <!DOCTYPE html>
             <html lang="zh-TW">
@@ -39,6 +58,7 @@ window.SummaryExport = (() => {
                         color: #1f2933;
                         line-height: 1.7;
                         margin: 32px;
+                        background: #fff;
                     }
                     h1 {
                         font-size: 24px;
@@ -51,7 +71,7 @@ window.SummaryExport = (() => {
                         margin: 0 0 12px;
                         color: #102a43;
                     }
-                    p, li {
+                    p, li, div, span {
                         font-size: 14px;
                     }
                     img {
@@ -63,10 +83,12 @@ window.SummaryExport = (() => {
                         white-space: pre-wrap;
                         word-break: break-word;
                     }
-                    .export-section {
+                    .export-section,
+                    .export-document-body {
                         margin-bottom: 28px;
                     }
-                    .export-section-body {
+                    .export-section-body,
+                    .export-document-body {
                         white-space: pre-wrap;
                         word-break: break-word;
                     }
@@ -79,8 +101,7 @@ window.SummaryExport = (() => {
             </head>
             <body>
                 <h1>${escapeHtml(title)}</h1>
-                ${createSectionHtml("會議總結", summaryHtml)}
-                ${createSectionHtml("圖片分析結果", imageAnalysisHtml)}
+                ${fullDocumentContent}
             </body>
             </html>
         `;
@@ -102,23 +123,27 @@ window.SummaryExport = (() => {
         downloadBlob(blob, `${sanitizeFileName(baseFileName)}.md`);
     }
 
-    function exportWord({ title, summaryHtml, imageAnalysisHtml, baseFileName }) {
-        const html = buildDocumentHtml({ title, summaryHtml, imageAnalysisHtml });
+    function exportWord({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText, baseFileName }) {
+        const html = buildDocumentHtml({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText });
         const blob = new Blob(["\ufeff", html], { type: "application/msword" });
         downloadBlob(blob, `${sanitizeFileName(baseFileName)}.doc`);
     }
 
-    async function exportPdf({ title, summaryHtml, imageAnalysisHtml, baseFileName }) {
+    async function exportPdf({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText, baseFileName }) {
         if (!window.html2pdf) {
             throw new Error("PDF 匯出套件尚未載入");
         }
 
         const wrapper = document.createElement("div");
-        wrapper.style.position = "fixed";
-        wrapper.style.left = "-99999px";
+        wrapper.style.position = "absolute";
+        wrapper.style.left = "0";
         wrapper.style.top = "0";
         wrapper.style.width = "794px";
-        wrapper.innerHTML = buildDocumentHtml({ title, summaryHtml, imageAnalysisHtml });
+        wrapper.style.opacity = "0";
+        wrapper.style.pointerEvents = "none";
+        wrapper.style.zIndex = "-1";
+        wrapper.style.background = "#fff";
+        wrapper.innerHTML = buildDocumentHtml({ title, documentText, summaryHtml, summaryText, imageAnalysisHtml, imageAnalysisText });
         document.body.appendChild(wrapper);
 
         try {
@@ -127,7 +152,7 @@ window.SummaryExport = (() => {
                     margin: [12, 12, 12, 12],
                     filename: `${sanitizeFileName(baseFileName)}.pdf`,
                     image: { type: "jpeg", quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true },
+                    html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
                     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
                     pagebreak: { mode: ["css", "legacy"] }
                 })
@@ -136,10 +161,6 @@ window.SummaryExport = (() => {
         } finally {
             document.body.removeChild(wrapper);
         }
-    }
-
-    function textToHtml(text) {
-        return escapeHtml(text || "").replace(/\n/g, "<br>");
     }
 
     return {
