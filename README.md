@@ -37,6 +37,21 @@
 
 ## 安裝方式
 
+以下步驟以 **Windows PowerShell** 為例。第一次使用時，請依序完成「確認系統工具 → 建立虛擬環境 → 安裝套件 → 建立資料庫 → 視需要建立金鑰檔案」。
+
+### 功能與必要條件
+
+不同功能需要的服務不同，不必為了查看畫面就先設定所有外部服務：
+
+| 想使用的功能 | 必須啟動或設定的項目 |
+|---|---|
+| 只查看前端畫面 | 靜態網頁伺服器（port `5500`） |
+| 註冊、登入、資料夾與會議管理 | 靜態網頁伺服器、FastAPI（port `8000`）、MySQL |
+| 即時錄音或上傳音訊轉錄 | 上述項目、WebSocket Listener（port `8765`）、FFmpeg、Whisper 與句向量模型 |
+| AI 摘要、心智圖與會議問答 | 上述項目、`.env` 中的 `AI_SERVICE_API_KEY` 與 `BASE_URL` |
+| 圖片分析 | FastAPI、`.env` 中的 `VISION_API_KEY`，以及程式指定模型可用的 API |
+| 建立 Google Calendar 事件 | `credentials.json`，並完成首次 Google OAuth 授權 |
+
 ### 系統需求
 
 - Python 3.10 或以上版本（建議使用 Python 3.10 或 3.11）
@@ -48,11 +63,27 @@
 - 選用：Google Calendar OAuth 憑證，用於建立行事曆事件
 - 選用：支援 CUDA 的 GPU，可加速 Whisper 推論
 
+先在 PowerShell 檢查 Python 與 FFmpeg：
+
+```powershell
+python --version
+ffmpeg -version
+ffprobe -version
+```
+
+建議顯示 Python `3.10.x` 或 `3.11.x`。如果 `ffmpeg` 或 `ffprobe` 顯示找不到指令，請先安裝 FFmpeg 並加入 PATH，或將兩個執行檔放在專案根目錄。只查看登入頁時可暫時不安裝 FFmpeg。
+
 ### 建立 Python 虛擬環境
 
 ```powershell
 cd <專案目錄>
 python -m venv venv
+.\venv\Scripts\activate
+```
+
+成功啟用後，PowerShell 提示字元前方通常會出現 `(venv)`。之後每次開啟新的終端機，都必須先回到專案目錄並重新執行：
+
+```powershell
 .\venv\Scripts\activate
 ```
 
@@ -64,19 +95,36 @@ pip install requests websockets pydub numpy torch openai-whisper opencc-python-r
 pip install sentence-transformers google-auth google-auth-oauthlib google-api-python-client openai
 ```
 
+安裝完成後可先檢查主要套件是否能匯入：
+
+```powershell
+python -c "import fastapi, mysql.connector, websockets, whisper, torch; print('Python 套件載入成功')"
+```
+
+如果這行出現 `ModuleNotFoundError`，請確認目前終端機已啟用 `venv`，再重新安裝錯誤訊息指出的套件。
+
 建議後續依實際測試環境建立並提交鎖定版本的 `requirements.txt`，避免套件更新後產生相容性問題。
 
 ## 系統設定
 
 ### 資料庫設定
 
-請先建立 MySQL 資料庫：
+1. 啟動 MySQL。若使用 XAMPP，只需要在 XAMPP Control Panel 啟動 **MySQL**；本專案不需要 Apache 或 PHP 才能執行。
+2. 使用 MySQL 命令列或 phpMyAdmin 建立資料庫。XAMPP 使用者可開啟 <http://localhost/phpmyadmin>，切到「SQL」頁籤後執行：
 
 ```sql
 CREATE DATABASE whisper_meetings CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-預設資料庫連線設定位於 `database.py`：
+也可以使用命令列：
+
+```powershell
+mysql -u root -p
+```
+
+輸入密碼後執行上方的 `CREATE DATABASE`。若 XAMPP 的 `root` 沒有密碼，提示輸入密碼時直接按 Enter。
+
+3. 確認 `database.py` 的帳號設定與實際 MySQL 相同。專案預設值為：
 
 ```python
 DB_CONFIG = {
@@ -87,11 +135,22 @@ DB_CONFIG = {
 }
 ```
 
-如果你的 MySQL 帳號、密碼或主機不同，請修改 `database.py` 中的設定。
+如果你的 MySQL 帳號、密碼、主機或資料庫名稱不同，請修改 `database.py` 中的設定。FastAPI 第一次成功連線時會自動建立 `users`、`folders`、`meetings` 資料表，不需要手動建立這三張表。
+
+> FastAPI 即使連不上 MySQL，也可能仍顯示已啟動；此時註冊、登入等資料庫功能仍會失敗。請以終端機是否顯示「資料庫與表格初始化成功」作為判斷依據。
 
 ### 環境變數
 
-如需使用 AI 摘要與圖片分析，請在專案根目錄建立 `.env`：
+只有要使用 AI 摘要、心智圖、會議問答或圖片分析時，才需要 `.env`。請在專案根目錄（與 `main.py` 同一層）建立名為 `.env` 的純文字檔；不要命名成 `.env.txt`。
+
+PowerShell 可先建立檔案：
+
+```powershell
+New-Item -ItemType File .env
+notepad .env
+```
+
+填入：
 
 ```env
 AI_SERVICE_API_KEY=your_chat_api_key
@@ -111,6 +170,8 @@ BASE_URL=https://your-openai-compatible-api-base-url/v1
 
 `BASE_URL` 請填 API 根網址且不要以 `/` 結尾，否則文字 API 網址可能出現重複的斜線。`AI_SERVICE_API_KEY` 用於摘要、心智圖和 RAG 問答，`VISION_API_KEY` 用於 `/vision/analyze` 圖片辨識。
 
+這三個值不是專案自動提供的測試金鑰，必須填入實際可用的 API 服務資料。若只測試註冊、登入或資料夾功能，可不建立 `.env`。
+
 `.gitignore` 已排除 `.env`、`credentials.json`、`token.json`、`uploads/`、`venv/` 與 Python 快取資料夾，避免敏感資料被提交。
 
 ### Google Calendar 設定
@@ -122,9 +183,29 @@ BASE_URL=https://your-openai-compatible-api-base-url/v1
 3. 將 `credentials.json` 放在專案根目錄。
 4. 第一次建立行事曆事件時，系統會開啟 OAuth 授權流程並產生 `token.json`。
 
+如果不使用 Google Calendar，可以完全略過 `credentials.json` 與 `token.json`。
+
+### `.gitignore` 中的檔案要如何處理
+
+這些項目被 Git 忽略，是因為它們是本機環境、執行後產物、大型檔案或敏感憑證。從 Git 取得專案後看不到它們是正常現象。
+
+| 項目 | 是否手動建立 | 產生或設定方式 |
+|---|---:|---|
+| `venv/` | 是 | 執行 `python -m venv venv` |
+| `__pycache__/` | 否 | Python 執行程式時自動產生 |
+| `uploads/` | 否 | FastAPI 啟動時自動建立；上傳音訊後會存放檔案 |
+| `*.exe` | 視情況 | 若未將 FFmpeg 加入 PATH，可自行放入 `ffmpeg.exe` 與 `ffprobe.exe` |
+| `.env` | 視功能 | 使用 AI 功能時依上一節手動建立，禁止提交真實金鑰 |
+| `credentials.json` | 視功能 | 從 Google Cloud Console 下載；只供 Calendar 功能使用 |
+| `token.json` | 否 | 第一次完成 Google OAuth 授權後自動產生 |
+
+請勿為了讓這些檔案出現在 Git 中而移除忽略規則，也不要提交 API Key、OAuth 憑證、使用者音訊或 token。
+
 ## 使用方式
 
 本專案需要同時啟動兩個後端服務：FastAPI REST API 伺服器，以及 WebSocket 即時音訊處理伺服器。
+
+若要使用完整功能，總共需要開啟 **三個 PowerShell 終端機**。三個終端機都必須停留在專案根目錄；前兩個還必須啟用同一個 `venv`。不要關閉正在執行服務的終端機。
 
 ### 首次啟動注意事項
 
@@ -153,6 +234,8 @@ ws://127.0.0.1:8765
 
 程式內部使用 `0.0.0.0:8765` 監聽所有網路介面；`0.0.0.0` 是伺服器綁定位址，不是瀏覽器應開啟的連線網址。
 
+首次執行可能長時間停在模型下載或載入訊息，這是正常現象。必須等到終端機顯示 WebSocket 已啟動，才算 Listener 準備完成。若目前只要測試帳號與資料夾管理，可先略過 Listener。
+
 ### 2. 啟動 FastAPI 後端
 
 開啟第二個終端機：
@@ -170,6 +253,8 @@ http://127.0.0.1:8000
 ```
 
 FastAPI 啟動時會自動建立需要的資料表。
+
+啟動成功時，終端機應顯示 Uvicorn 正在 `http://127.0.0.1:8000` 執行，且應看到資料庫初始化成功訊息。若出現 `ModuleNotFoundError`，代表 Python 套件未完整安裝；若出現資料庫連線失敗，請回到「資料庫設定」檢查 MySQL。
 
 FastAPI 啟動後，也可以開啟自動產生的 API 文件：
 
@@ -191,6 +276,8 @@ python -m http.server 5500
 http://127.0.0.1:5500/login.html
 ```
 
+`python -m http.server` 只負責提供 HTML、CSS 與 JavaScript，不會自動啟動 FastAPI、MySQL 或 Listener。看到登入畫面不等於後端功能已經可用。
+
 不建議直接雙擊 HTML 檔案，以避免麥克風權限、跨來源請求或前端資源載入問題。心智圖及 Markdown 顯示會從 CDN 載入 D3、Markmap、Marked 和 DOMPurify，因此使用這些畫面時需要網路連線。
 
 建議使用流程：
@@ -202,6 +289,31 @@ http://127.0.0.1:5500/login.html
 5. 進入 `index.html` 開始錄音或上傳音訊。
 6. 查看逐字稿、AI 摘要、圖片分析與心智圖。
 7. 從 `view.html` 重新檢視已儲存的會議。
+
+### 啟動後檢查清單
+
+依序確認以下網址或狀態：
+
+1. 開啟 <http://127.0.0.1:8000/docs>，確認 FastAPI 文件能顯示。
+2. 開啟 <http://127.0.0.1:5500/login.html>，確認登入頁能顯示。
+3. 建立一個測試帳號；成功代表前端、FastAPI 與 MySQL 三者已連通。
+4. 登入後建立資料夾與會議；成功代表主要 CRUD API 可用。
+5. 進入會議頁，確認 Listener 終端機出現新的 WebSocket 連線，再測試錄音或音訊上傳。
+6. 最後測試摘要、圖片分析與 Google Calendar；這些功能各自依賴 API Key 或 OAuth 憑證。
+
+也可用 PowerShell 檢查三個連接埠：
+
+```powershell
+Test-NetConnection 127.0.0.1 -Port 5500
+Test-NetConnection 127.0.0.1 -Port 8000
+Test-NetConnection 127.0.0.1 -Port 8765
+```
+
+對應服務啟動後，該指令的 `TcpTestSucceeded` 應為 `True`。
+
+### 關閉專案
+
+在三個執行服務的終端機中分別按 `Ctrl+C`。關閉終端機前先停止服務，可避免連接埠仍被背景程序占用。MySQL 可在 XAMPP Control Panel 或 Windows 服務管理工具中停止。
 
 ## API 端點
 
