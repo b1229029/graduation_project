@@ -54,6 +54,28 @@ def is_prompt_leak(text):
     ]
     return any(marker in normalized for marker in prompt_leak_markers)
 
+def split_text_by_chars(text: str, chunk_size: int, *, min_break_search: int = 200):
+    """Split text into chunks of ~chunk_size, preferring to break on newline."""
+    if not text:
+        return []
+    if chunk_size <= 0:
+        return [text]
+
+    chunks = []
+    start = 0
+    n = len(text)
+    while start < n:
+        end = min(start + chunk_size, n)
+        if end < n:
+            newline_pos = text.rfind("\n", start, end + 1)
+            if newline_pos != -1 and (newline_pos - start) >= min_break_search:
+                end = newline_pos + 1
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = end
+    return chunks
+
 async def audio_handler(websocket):
     """處理單一前端 WebSocket 連線的完整會議生命週期。
 
@@ -230,6 +252,24 @@ async def audio_handler(websocket):
                             CHUNK_SIZE = 1000
                             compiled_context = ai_transcript_log # 簡化處理
                             await websocket.send(json.dumps({"type": "upload_progress", "message": "正在生成總結..."}))
+                            text_chunks = split_text_by_chars(compiled_context, CHUNK_SIZE)
+                            if len(text_chunks) > 1:
+                                await websocket.send(json.dumps({
+                                    "type": "upload_progress",
+                                    "message": f"正在生成總結... (分段 {len(text_chunks)} 段)"
+                                }))
+                                chunk_summaries = []
+                                for idx, chunk_text in enumerate(text_chunks, start=1):
+                                    await websocket.send(json.dumps({
+                                        "type": "upload_progress",
+                                        "message": f"分段摘要 {idx}/{len(text_chunks)}..."
+                                    }))
+                                    summary = await loop.run_in_executor(None, summarize_chunk, chunk_text)
+                                    if summary and summary.strip():
+                                        chunk_summaries.append(f"【第 {idx} 段摘要】\n{summary.strip()}")
+                                if chunk_summaries:
+                                    compiled_context = "\n\n".join(chunk_summaries)
+
                             undiscussed_topics = []
                             if current_monitor: undiscussed_topics = current_monitor.get_undiscussed_topics()
                             
