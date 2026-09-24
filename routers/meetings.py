@@ -183,7 +183,7 @@ def ask_meeting_bot(meeting_id: int, request: ChatRequest):
     ensure_image_analysis_column(conn)
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT transcript_text, image_analysis_text, summary_text FROM meetings WHERE id = %s", (meeting_id,))
+        cursor.execute("SELECT transcript_text, image_analysis_text, summary_text, audio_file_path FROM meetings WHERE id = %s", (meeting_id,))
         meeting = cursor.fetchone()
         if not meeting:
             raise HTTPException(status_code=404, detail="找不到此會議")
@@ -195,8 +195,17 @@ def ask_meeting_bot(meeting_id: int, request: ChatRequest):
         if not transcript and not image_analysis:
             return {"answer": "這場會議目前沒有逐字稿或圖片分析紀錄，無法回答問題喔！"}
 
-        answer = chat_with_meeting_rag(request.question, transcript, summary, image_analysis)
-        return {"answer": answer}
+        result = chat_with_meeting_rag(
+            request.question,
+            transcript,
+            summary,
+            image_analysis,
+            return_sources=True,
+        )
+        return {
+            "answer": result["answer"],
+            "audio_sources": result["audio_sources"] if meeting.get("audio_file_path") else [],
+        }
     finally:
         cursor.close()
         conn.close()

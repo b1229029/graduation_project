@@ -77,6 +77,12 @@
         .chat-markdown ul, .chat-markdown ol { margin: 6px 0 6px 20px; padding: 0; }
         .chat-markdown pre { white-space: pre-wrap; background: #f8f9fa; padding: 8px; border-radius: 6px; overflow-x: auto; }
         .chat-markdown code { background: #f8f9fa; padding: 1px 4px; border-radius: 4px; }
+        .chat-audio-player { width: 100%; height: 36px; margin: 0 0 12px; }
+        .chat-audio-sources { margin-top: 10px; padding-top: 8px; border-top: 1px solid #d5dbe1; }
+        .chat-audio-sources-title { color: #495057; font-size: 0.88em; margin-bottom: 6px; }
+        .chat-audio-source-btn { background: #fff; color: #0056b3; border: 1px solid #80bdff; border-radius: 999px; padding: 4px 9px; margin: 0 6px 6px 0; cursor: pointer; }
+        .chat-audio-source-btn:hover { background: #eaf4ff; }
+        .chat-audio-source-text { color: #6c757d; font-size: 0.85em; margin: 2px 0 4px; }
         .chat-input-area { display: flex; gap: 10px; flex-shrink: 0; }
         input[type="text"] { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 1em; }
         .btn-primary { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; }
@@ -130,6 +136,7 @@
         <div id="page-chat" class="page-section">
             <div class="card" style="border: 2px solid #007bff;">
                 <h3>💬 會議問答助手 (RAG 歷史檢索)</h3>
+                <audio id="chat-audio-player" class="chat-audio-player" controls style="display:none;"></audio>
                 <div id="chat-history">
                     <div style="color: #555; font-size: 0.9em; margin-bottom: 8px;">助手：您好！我是這場會議的 AI 助手。您可以問我任何關於這場會議的細節。</div>
                 </div>
@@ -151,6 +158,8 @@
         let targetEndTime = null;
         let pendingMindmapRoot = null;
         let currentMeetingTitle = '';
+        let meetingAudioUrl = '';
+        let transcriptTimestamps = [];
 
         function escapeHtml(value) {
             return String(value || "")
@@ -165,6 +174,62 @@
             if (!url) return '';
             if (/^(https?:|data:|blob:)/.test(url)) return url;
             return `${API_BASE_URL}/${String(url).replace(/^\/+/, '')}`;
+        }
+
+        function collectTranscriptTimestamps(transcriptText) {
+            const timestamps = [];
+            const seen = new Set();
+            const pattern = /\[(\d{1,3}):(\d{2})\]/g;
+            let match;
+            while ((match = pattern.exec(transcriptText || '')) !== null) {
+                const seconds = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+                if (!seen.has(seconds)) {
+                    seen.add(seconds);
+                    timestamps.push(seconds);
+                }
+            }
+            return timestamps.sort((a, b) => a - b);
+        }
+
+        function configureAudioPlayers(audioPath) {
+            meetingAudioUrl = resolveAssetUrl(audioPath);
+            const audioContainer = document.getElementById('audio-container');
+            const chatPlayer = document.getElementById('chat-audio-player');
+
+            if (!meetingAudioUrl) return;
+
+            if (audioContainer) {
+                audioContainer.innerHTML = '<audio id="meeting-audio-player" controls style="height: 35px;"></audio>';
+                const meetingPlayer = document.getElementById('meeting-audio-player');
+                meetingPlayer.src = meetingAudioUrl;
+                meetingPlayer.ontimeupdate = () => {
+                    if (targetEndTime !== null && meetingPlayer.currentTime >= targetEndTime) {
+                        meetingPlayer.pause();
+                        targetEndTime = null;
+                    }
+                };
+            }
+
+            if (chatPlayer) {
+                chatPlayer.src = meetingAudioUrl;
+                chatPlayer.ontimeupdate = () => {
+                    if (targetEndTime !== null && chatPlayer.currentTime >= targetEndTime) {
+                        chatPlayer.pause();
+                        targetEndTime = null;
+                    }
+                };
+                chatPlayer.style.display = 'block';
+            }
+        }
+
+        function playAudioAt(seconds) {
+            const player = document.getElementById('chat-audio-player') || document.getElementById('meeting-audio-player');
+            if (!player || !meetingAudioUrl) return;
+
+            const nextTimestamp = transcriptTimestamps.find(timestamp => timestamp > seconds);
+            targetEndTime = nextTimestamp === undefined ? null : nextTimestamp;
+            player.currentTime = Math.max(0, seconds - 1);
+            player.play().catch(() => {});
         }
 
         function renderImageCard(item, classPrefix = 'transcript') {
@@ -478,6 +543,7 @@
                 currentMeetingTitle = data.title || '';
                 document.getElementById('navbar-title').innerText = ` ${data.title}`;
                 document.getElementById('transcript-content').innerHTML = renderTranscriptText(data.transcript_text);
+                transcriptTimestamps = collectTranscriptTimestamps(data.transcript_text);
                 document.getElementById('summary-content').innerText = data.summary_text || "無總結資料";
                 const imageAnalysisText = data.image_analysis_text || extractImageAnalysisFromTranscript(data.transcript_text);
                 if (imageAnalysisText) {
@@ -486,19 +552,7 @@
                 }
 
                 // 音檔播放器
-                if (data.audio_file_path) {
-                    document.getElementById('audio-container').innerHTML = `
-                        <audio id="meeting-audio-player" controls style="height: 35px;">
-                            <source src="${API_BASE_URL}/${data.audio_file_path}" type="audio/webm">
-                        </audio>
-                    `;
-                    const player = document.getElementById('meeting-audio-player');
-                    player.ontimeupdate = () => {
-                        if (targetEndTime !== null && player.currentTime >= targetEndTime) {
-                            player.pause(); targetEndTime = null;
-                        }
-                    };
-                }
+                configureAudioPlayers(data.audio_file_path);
 
         function ensureMindmapExportButton() {
             if (document.getElementById('history-download-mindmap-svg')) return;
@@ -567,6 +621,7 @@
                 if (m) {
                     const totalSec = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
                     const player = document.getElementById('meeting-audio-player');
+                    if (!player) return;
                     const idx = mindmapTimestamps.indexOf(totalSec);
                     targetEndTime = (idx !== -1 && idx < mindmapTimestamps.length - 1) ? mindmapTimestamps[idx + 1] : null;
                     player.currentTime = Math.max(0, totalSec - 2);
@@ -593,7 +648,7 @@
             return escapedText.replace(/\n/g, "<br>");
         }
 
-        function appendChatMessage(historyEl, content, role) {
+        function appendChatMessage(historyEl, content, role, audioSources = []) {
             const message = document.createElement('div');
             message.className = `chat-message ${role}`;
 
@@ -608,6 +663,29 @@
             }
 
             message.appendChild(bubble);
+
+            if (role === 'bot' && audioSources.length) {
+                const sourcePanel = document.createElement('div');
+                sourcePanel.className = 'chat-audio-sources';
+                sourcePanel.innerHTML = '<div class="chat-audio-sources-title">🔊 相關音檔片段（點擊時間播放）</div>';
+                audioSources.forEach(source => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'chat-audio-source-btn';
+                    button.textContent = `▶ ${source.label}`;
+                    button.title = source.text || `播放 ${source.label} 的會議內容`;
+                    button.onclick = () => playAudioAt(Number(source.seconds));
+                    sourcePanel.appendChild(button);
+
+                    if (source.text) {
+                        const text = document.createElement('div');
+                        text.className = 'chat-audio-source-text';
+                        text.textContent = `${source.label}：${source.text}`;
+                        sourcePanel.appendChild(text);
+                    }
+                });
+                message.appendChild(sourcePanel);
+            }
             historyEl.appendChild(message);
         }
         
@@ -632,7 +710,7 @@
                 });
                 const data = await res.json();
                 document.getElementById(loadingId).remove();
-                appendChatMessage(historyEl, data.answer, 'bot');
+                appendChatMessage(historyEl, data.answer, 'bot', data.audio_sources || []);
                 historyEl.scrollTop = historyEl.scrollHeight;
             } catch (err) { document.getElementById(loadingId).innerText = "❌ 錯誤：無法連接伺服器"; }
         }

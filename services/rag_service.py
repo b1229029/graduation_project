@@ -8,11 +8,44 @@
 import torch
 import requests
 import json
+import re
 from sentence_transformers import util
 from services.audio_service import embedding_model  # 重用 bge-m3 模型
 from services.ai_service import CHAT_ENDPOINT, NEW_API_KEY, CHAT_MODEL
 
-def chat_with_meeting_rag(question: str, full_transcript: str, summary_text: str, image_analysis_text: str = ""):
+TIMESTAMP_PATTERN = re.compile(r"\[(\d{1,3}):(\d{2})\]\s*([^\n]*)")
+
+
+def extract_audio_sources(retrieved_context: str):
+    """從 RAG 找出的逐字稿片段擷取可播放的音訊時間點。"""
+    sources = []
+    seen_seconds = set()
+
+    for match in TIMESTAMP_PATTERN.finditer(retrieved_context or ""):
+        minutes = int(match.group(1))
+        seconds = int(match.group(2))
+        total_seconds = minutes * 60 + seconds
+        if total_seconds in seen_seconds:
+            continue
+
+        snippet = re.sub(r"\s+", " ", match.group(3)).strip(" .…")
+        sources.append({
+            "label": f"{minutes:02d}:{seconds:02d}",
+            "seconds": total_seconds,
+            "text": snippet[:160]
+        })
+        seen_seconds.add(total_seconds)
+
+    return sources[:8]
+
+
+def chat_with_meeting_rag(
+    question: str,
+    full_transcript: str,
+    summary_text: str,
+    image_analysis_text: str = "",
+    return_sources: bool = False,
+):
     """根據單場會議內容回答問題。
 
     Args:
@@ -20,6 +53,7 @@ def chat_with_meeting_rag(question: str, full_transcript: str, summary_text: str
         full_transcript: 完整逐字稿。
         summary_text: 已產生的會議摘要，可作為高階背景。
         image_analysis_text: 圖片/白板/投影片分析結果，會一併納入可檢索內容。
+        return_sources: 是否一併回傳 RAG 檢索片段中的音訊時間點。
 
     Returns:
         模型回答文字；若 API 呼叫失敗則回傳可顯示給前端的錯誤訊息。
@@ -51,6 +85,8 @@ def chat_with_meeting_rag(question: str, full_transcript: str, summary_text: str
     else:
         retrieved_context = searchable_text
 
+    audio_sources = extract_audio_sources(retrieved_context)
+
     # 2. 組合終極 Prompt (將全局總結與局部細節結合)
     prompt = f"""
     你是一位專業的 AI 會議助理。請根據以下【會議重點總結】與【檢索出的對話細節】，回答使用者的問題。
@@ -81,6 +117,12 @@ def chat_with_meeting_rag(question: str, full_transcript: str, summary_text: str
     try:
         res = requests.post(CHAT_ENDPOINT, headers=headers, json=payload, timeout=60)
         res.raise_for_status()
-        return res.json()['choices'][0]['message']['content'].strip()
+        answer = res.json()['choices'][0]['message']['content'].strip()
+        if return_sources:
+            return {"answer": answer, "audio_sources": audio_sources}
+        return answer
     except Exception as e:
-        return f"抱歉，機器人回答時發生錯誤：{str(e)}"
+        error_message = f"抱歉，機器人回答時發生錯誤：{str(e)}"
+        if return_sources:
+            return {"answer": error_message, "audio_sources": []}
+        return error_message
