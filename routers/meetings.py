@@ -15,6 +15,9 @@ from services.rag_service import chat_with_meeting_rag
 
 router = APIRouter(tags=["會議管理"])
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+UPLOAD_DIR = os.path.join(PROJECT_ROOT, "uploads")
+
 class ChatRequest(BaseModel):
     """RAG 問答端點的請求格式。"""
     question: str
@@ -137,14 +140,16 @@ def upload_meeting_audio(meeting_id: int, file: UploadFile = File(...)):
     cursor = conn.cursor()
     try:
         file_extension = file.filename.split(".")[-1] if "." in file.filename else "webm"
-        file_path = f"uploads/meeting_{meeting_id}.{file_extension}"
+        stored_path = f"uploads/meeting_{meeting_id}.{file_extension}"
+        file_path = os.path.join(PROJECT_ROOT, stored_path)
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
         
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        cursor.execute("UPDATE meetings SET audio_file_path = %s WHERE id = %s", (file_path, meeting_id))
+        cursor.execute("UPDATE meetings SET audio_file_path = %s WHERE id = %s", (stored_path, meeting_id))
         conn.commit()
-        return {"message": "音檔上傳成功", "path": file_path}
+        return {"message": "音檔上傳成功", "path": stored_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"儲存音檔失敗: {e}")
     finally:
@@ -159,8 +164,12 @@ def delete_meeting(meeting_id: int):
     try:
         cursor.execute("SELECT audio_file_path FROM meetings WHERE id = %s", (meeting_id,))
         row = cursor.fetchone()
-        if row and row['audio_file_path'] and os.path.exists(row['audio_file_path']):
-            os.remove(row['audio_file_path'])
+        if row and row['audio_file_path']:
+            audio_path = row['audio_file_path']
+            if not os.path.isabs(audio_path):
+                audio_path = os.path.join(PROJECT_ROOT, audio_path)
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
             
         cursor.execute("DELETE FROM meetings WHERE id = %s", (meeting_id,))
         conn.commit()

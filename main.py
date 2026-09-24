@@ -16,6 +16,9 @@ from database import create_tables
 
 app = FastAPI(title="Whisper 會議助手 API")
 
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(PROJECT_ROOT, "uploads")
+
 @app.on_event("startup")
 def startup_event():
     """伺服器啟動時建立或補齊資料庫表格。
@@ -25,11 +28,11 @@ def startup_event():
     """
     create_tables()
 
-# 建立儲存音檔的資料夾
-os.makedirs("uploads", exist_ok=True)
+# 建立儲存音檔的資料夾；使用專案絕對路徑，避免從不同工作目錄啟動時讀不到音檔。
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # 讓前端可以透過 URL 直接讀取 uploads 資料夾內的檔案
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # 設定 CORS (允許前端跨域請求)
 app.add_middleware(
