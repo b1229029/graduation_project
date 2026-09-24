@@ -83,6 +83,7 @@
         .chat-audio-source-btn { background: #fff; color: #0056b3; border: 1px solid #80bdff; border-radius: 999px; padding: 4px 9px; margin: 0 6px 6px 0; cursor: pointer; }
         .chat-audio-source-btn:hover { background: #eaf4ff; }
         .chat-audio-source-text { color: #6c757d; font-size: 0.85em; margin: 2px 0 4px; }
+        #audio-container { display: flex; align-items: center; min-width: 280px; }
         .chat-input-area { display: flex; gap: 10px; flex-shrink: 0; }
         input[type="text"] { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 1em; }
         .btn-primary { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; }
@@ -125,7 +126,9 @@
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <h3> 結構化心智圖 (點擊節點跳轉播放)</h3>
-                    <div id="audio-container"></div>
+                    <div id="audio-container">
+                        <audio id="meeting-audio-player" controls style="height: 35px; display: none;"></audio>
+                    </div>
                 </div>
                 <div id="mindmap-container">
                     <svg id="markmap-svg"></svg>
@@ -196,12 +199,15 @@
             const audioContainer = document.getElementById('audio-container');
             const chatPlayer = document.getElementById('chat-audio-player');
 
-            if (!meetingAudioUrl) return;
+            const meetingPlayer = document.getElementById('meeting-audio-player');
+            if (!meetingAudioUrl) {
+                if (meetingPlayer) meetingPlayer.style.display = 'none';
+                return;
+            }
 
-            if (audioContainer) {
-                audioContainer.innerHTML = '<audio id="meeting-audio-player" controls style="height: 35px;"></audio>';
-                const meetingPlayer = document.getElementById('meeting-audio-player');
+            if (audioContainer && meetingPlayer) {
                 meetingPlayer.src = meetingAudioUrl;
+                meetingPlayer.style.display = 'block';
                 meetingPlayer.ontimeupdate = () => {
                     if (targetEndTime !== null && meetingPlayer.currentTime >= targetEndTime) {
                         meetingPlayer.pause();
