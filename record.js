@@ -7,9 +7,7 @@
  * - WebSocket listener.py：即時轉錄、圖片分析、摘要與行事曆事件。
  * - FastAPI REST API：儲存會議結果與完整音訊。
  */
-const API_HOST = window.location.hostname || '127.0.0.1';
-const API_PROTOCOL = window.location.protocol === 'https:' ? 'https:' : 'http:';
-const API_BASE_URL = `${API_PROTOCOL}//${API_HOST}:8000`;
+const API_BASE_URL = "http://127.0.0.1:8000"; 
 const urlParams = new URLSearchParams(window.location.search);
 const currentMeetingId = urlParams.get('meeting_id');
 const currentMeetingTopic = urlParams.get('topic');
