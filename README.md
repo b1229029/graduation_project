@@ -400,9 +400,12 @@ graduation_project/
 │   ├── 需求規格書.pdf
 │   ├── 設計文件書.pdf
 │   ├── 測試計畫書.pdf
+│   ├── 測試計畫書v2.0.pdf
 │   ├── 4.20專題報告ppt.pdf
 │   ├── 6.3專題報告ppt.pdf
 │   └── 大三下第二次簡報影片.mov
+│   └── 大四下第一次簡報影片.mp4
+│   └── 大四下第二次簡報影片.mp4
 ├── uploads/                        # 產生的會議音訊檔，已被 Git 忽略
 ├── .env                            # 本機 API 金鑰，已被 Git 忽略
 ├── credentials.json                # Google OAuth 憑證，已被 Git 忽略
