@@ -312,6 +312,26 @@ function renderSafeMarkdown(markdownText) {
     return escapedText.replace(/\n/g, "<br>");
 }
 
+function playRagTimestamp(totalSeconds) {
+    UIManager.switchPage('mindmap');
+    const currentIndex = UIManager.mindmapTimestamps.indexOf(totalSeconds);
+    UIManager.targetEndTime = (
+        currentIndex !== -1 && currentIndex < UIManager.mindmapTimestamps.length - 1
+    ) ? UIManager.mindmapTimestamps[currentIndex + 1] : null;
+
+    const player = UIManager.els.mindmapAudioPlayer;
+    const hasAudio = player && (player.currentSrc || player.getAttribute('src'));
+    if (!hasAudio || !window.RagTimeline) {
+        alert("目前沒有可播放的會議音檔。");
+        return;
+    }
+
+    setTimeout(async () => {
+        const played = await window.RagTimeline.seekAndPlay(player, totalSeconds, 2);
+        if (!played) alert("該時間超出音檔範圍，無法跳轉播放。");
+    }, 150);
+}
+
 function appendChatMessage(historyEl, content, role) {
     const message = document.createElement('div');
     message.className = `chat-message ${role}`;
@@ -322,6 +342,7 @@ function appendChatMessage(historyEl, content, role) {
     if (role === 'bot') {
         bubble.classList.add('chat-markdown');
         bubble.innerHTML = renderSafeMarkdown(content || "");
+        if (window.RagTimeline) window.RagTimeline.linkify(bubble, playRagTimestamp);
     } else {
         bubble.textContent = content;
     }

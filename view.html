@@ -14,6 +14,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
     <script src="summary_export.js?v=2026-08-13-export"></script>
+    <script src="rag_timeline.js?v=2026-10-04-rag-time-2"></script>
 
     <style>
         /* 與 index.html 保持相近的頁籤布局，但此頁以閱讀歷史資料為主。 */
@@ -77,6 +78,8 @@
         .chat-markdown ul, .chat-markdown ol { margin: 6px 0 6px 20px; padding: 0; }
         .chat-markdown pre { white-space: pre-wrap; background: #f8f9fa; padding: 8px; border-radius: 6px; overflow-x: auto; }
         .chat-markdown code { background: #f8f9fa; padding: 1px 4px; border-radius: 4px; }
+        .rag-time-link { border: 0; background: transparent; color: #0069d9; padding: 0 2px; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+        .rag-time-link:hover, .rag-time-link:focus { color: #004085; background: #dbeeff; border-radius: 3px; outline: none; }
         .chat-input-area { display: flex; gap: 10px; flex-shrink: 0; }
         input[type="text"] { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 1em; }
         .btn-primary { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; }
@@ -593,6 +596,25 @@
             return escapedText.replace(/\n/g, "<br>");
         }
 
+        function playRagTimestamp(totalSeconds) {
+            switchPage('mindmap');
+            const currentIndex = mindmapTimestamps.indexOf(totalSeconds);
+            targetEndTime = (
+                currentIndex !== -1 && currentIndex < mindmapTimestamps.length - 1
+            ) ? mindmapTimestamps[currentIndex + 1] : null;
+
+            const player = document.getElementById('meeting-audio-player');
+            if (!player || !window.RagTimeline) {
+                alert("目前沒有可播放的會議音檔。");
+                return;
+            }
+
+            setTimeout(async () => {
+                const played = await window.RagTimeline.seekAndPlay(player, totalSeconds, 2);
+                if (!played) alert("該時間超出音檔範圍，無法跳轉播放。");
+            }, 150);
+        }
+
         function appendChatMessage(historyEl, content, role) {
             const message = document.createElement('div');
             message.className = `chat-message ${role}`;
@@ -603,6 +625,7 @@
             if (role === 'bot') {
                 bubble.classList.add('chat-markdown');
                 bubble.innerHTML = renderSafeMarkdown(content || "");
+                if (window.RagTimeline) window.RagTimeline.linkify(bubble, playRagTimestamp);
             } else {
                 bubble.textContent = content;
             }

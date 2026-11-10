@@ -18,7 +18,7 @@ load_dotenv()
 # ==========================================
 NEW_API_KEY = os.getenv("AI_SERVICE_API_KEY")
 BASE_URL = os.getenv("BASE_URL") 
-CHAT_MODEL = "gpt-oss:20b"
+CHAT_MODEL = "gemma-4-26b-a4b-it"
 CHAT_ENDPOINT = f"{BASE_URL}/chat/completions"
 
 # ==========================================

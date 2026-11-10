@@ -95,6 +95,8 @@
         .chat-markdown ul, .chat-markdown ol { margin: 6px 0 6px 20px; padding: 0; }
         .chat-markdown pre { white-space: pre-wrap; background: #f8f9fa; padding: 8px; border-radius: 6px; overflow-x: auto; }
         .chat-markdown code { background: #f8f9fa; padding: 1px 4px; border-radius: 4px; }
+        .rag-time-link { border: 0; background: transparent; color: #0069d9; padding: 0 2px; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+        .rag-time-link:hover, .rag-time-link:focus { color: #004085; background: #dbeeff; border-radius: 3px; outline: none; }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
@@ -277,7 +279,8 @@
     <script src="audio_manager.js?v=2026-07-28-timeslice"></script>
     <script src="summary_export.js?v=2026-08-13-export"></script>
     <script src="ui_manager.js?v=2026-07-20-transcript-images"></script>
-    <script src="record.js?v=2026-08-05-template-select"></script>
+    <script src="rag_timeline.js?v=2026-10-04-rag-time-2"></script>
+    <script src="record.js?v=2026-10-04-rag-time"></script>
 
     <script>
         // 這段處理圖片上傳的 REST API 流程；record.js 另有 WebSocket 圖片流程，
