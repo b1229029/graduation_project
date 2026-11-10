@@ -10,6 +10,7 @@ import requests
 import json
 import os
 from dotenv import load_dotenv
+from services.timestamp_utils import extract_timestamps, snap_timestamps
 
 load_dotenv()
 
@@ -45,7 +46,7 @@ def analyze_image_content(base64_image, filename="unknown.jpg"):
             base64_image = f"data:image/png;base64,{base64_image}"
 
         payload = {
-            "model": "gpt-5.4-mini",
+            "model": "gpt-5.6-luna",
             "messages": [
                 {
                     "role": "user", 
@@ -71,9 +72,20 @@ def summarize_chunk(chunk_text):
     """將一段逐字稿壓縮成短摘要。
 
     主要用於長會議中間摘要或分段整理，讓後續生成總摘要時不必把所有原文
-    一次塞進模型。
+    一次塞進模型。每條重點都會附上原文的 [MM:SS]，並在回傳前校正成
+    這段原文中真實存在的時間，讓之後的心智圖仍能對應到正確時間。
     """
-    prompt = f"請幫我用 50 到 100 字以內的繁體中文，總結以下對話內容的重點。\n若這段內容無實質重點，請回覆：「無明顯重點」。\n【對話片段】\n{chunk_text}"
+    prompt = f"""請用繁體中文，將以下對話片段整理成 3 到 6 條重點，每條以「- 」開頭。
+
+【時間戳規則】：
+1. 每條重點的最後面，必須附上該重點在原文中最早被提到那一句的時間標籤，格式為 [MM:SS]。
+2. 時間標籤必須原樣沿用對話片段中真實出現過的值，不得推算、改寫或自行填入 [00:00]。
+3. 若某條重點真的對應不到任何時間標籤，就不要加時間。
+
+若這段內容無實質重點，請回覆：「無明顯重點」。
+
+【對話片段】
+{chunk_text}"""
     headers = {
         "Content-Type": "application/json", 
         "Authorization": f"Bearer {NEW_API_KEY}"
@@ -88,19 +100,22 @@ def summarize_chunk(chunk_text):
     try:
         res = requests.post(CHAT_ENDPOINT, headers=headers, json=payload, timeout=60)
         res.raise_for_status()
-        return res.json()['choices'][0]['message']['content'].strip()
+        summary = res.json()['choices'][0]['message']['content'].strip()
+        return snap_timestamps(summary, extract_timestamps(chunk_text))
     except Exception as e:
         return "（此段落總結失敗）"
 
 # ==========================================
 # 生成最終會議紀錄與心智圖
 # ==========================================
-def generate_meeting_summary(compiled_context, undiscussed_list=None, template_type="general", retry_count=0, participants_str=""):
+def generate_meeting_summary(compiled_context, undiscussed_list=None, template_type="general", retry_count=0, participants_str="", source_transcript=""):
     """依會議上下文產生摘要與心智圖 Markdown。
 
     compiled_context 會包含逐字稿、即時摘要與圖片分析結果；undiscussed_list
-    會提醒模型哪些議程尚未被討論。函式回傳 JSON 字串，格式包含 summary
-    與 mindmap，前端會分別渲染到摘要頁與 markmap 心智圖。
+    會提醒模型哪些議程尚未被討論。source_transcript 是帶 [MM:SS] 的原始
+    逐字稿，用來把心智圖中的時間戳校正成真實存在的時間（長會議的
+    compiled_context 可能只剩分段摘要）。函式回傳 JSON 字串，格式包含
+    summary 與 mindmap，前端會分別渲染到摘要頁與 markmap 心智圖。
     """
     if not compiled_context or len(compiled_context) < 10: 
         return json.dumps({"summary": "會議內容過短，無法生成總結。", "mindmap": ""})
@@ -159,7 +174,11 @@ def generate_meeting_summary(compiled_context, undiscussed_list=None, template_t
 
 💡【心智圖嚴格指令，違者嚴懲】：
 1. 不准輸出「第二部分：結構化心智圖」這幾個字！請直接從「# 本次會議核心主題」開始寫起。
-2. 每一個項目（包含父節點與子節點）的最後面，都「必須」加上時間標籤 [MM:SS]！若真的找不到對應時間，請強制標註 [00:00]。絕對不允許出現沒有時間標籤的節點！
+2. 每一個子節點的最後面都要加上時間標籤 [MM:SS]，而且必須原樣沿用【會議素材】中真實出現過的時間戳（逐字稿每行開頭的時間，或分段摘要中重點後面的時間），不得推算、改寫或自行編造。
+3. 若某個重點本身沒有時間，但它所屬的段落標題有時間範圍（例如「【第 2 段摘要｜02:05–04:12】」），請使用該範圍的起始時間。
+4. 父節點的時間標籤，使用它底下最早的子節點時間。
+5. 若某個節點在素材中真的找不到任何對應時間，就不要加時間標籤，絕對不要填 [00:00] 或空白的 []。
+6. 上方格式範例中的時間只是示範格式，請勿沿用。心智圖必須涵蓋整場會議從頭到尾的內容，不可只整理前半段。
 
 以下是【會議素材】：
 {compiled_context}
@@ -189,7 +208,7 @@ def generate_meeting_summary(compiled_context, undiscussed_list=None, template_t
         if not raw_content:
             if retry_count < 2: 
                 print(f"⚠️ 收到空白內容，啟動第 {retry_count + 1} 次重試...")
-                return generate_meeting_summary(compiled_context, undiscussed_list, template_type, retry_count + 1, participants_str)
+                return generate_meeting_summary(compiled_context, undiscussed_list, template_type, retry_count + 1, participants_str, source_transcript)
             else: 
                 return json.dumps({"error": "⚠️ API 連續回傳空白內容，請確認會議長度或稍後再試。"})
 
@@ -225,7 +244,11 @@ def generate_meeting_summary(compiled_context, undiscussed_list=None, template_t
         
         if not mindmap_part.startswith("#"):
             mindmap_part = "# 會議核心總結\n" + mindmap_part
-                
+
+        # 安全網：模型若編了不存在的時間，改成原始逐字稿中最接近的真實時間。
+        if source_transcript:
+            mindmap_part = snap_timestamps(mindmap_part, extract_timestamps(source_transcript))
+
         return json.dumps({"summary": summary_part, "mindmap": mindmap_part})
     except Exception as e:
         return json.dumps({"error": f"生成錯誤: {str(e)}"})

@@ -29,6 +29,7 @@ from services.ai_service import (
 from services.audio_service import (
     whisper_model, cc, analyzer, remove_overlap_text, AgendaMonitor, DEVICE
 )
+from services.timestamp_utils import format_time_range
 
 # ==========================================
 # 全域設定
@@ -146,8 +147,9 @@ async def audio_handler(websocket):
                             compiled_context, 
                             undiscussed_topics, 
                             template_type,
-                            0, 
-                            current_participants 
+                            0,
+                            current_participants,
+                            ai_transcript_log
                         )
 
                         res_dict = json.loads(json_result)
@@ -266,14 +268,18 @@ async def audio_handler(websocket):
                                     }))
                                     summary = await loop.run_in_executor(None, summarize_chunk, chunk_text)
                                     if summary and summary.strip():
-                                        chunk_summaries.append(f"【第 {idx} 段摘要】\n{summary.strip()}")
+                                        # 時間範圍由程式從原文計算，不依賴模型，確保段落標題的時間一定正確。
+                                        time_range = format_time_range(chunk_text)
+                                        header = f"【第 {idx} 段摘要｜{time_range}】" if time_range else f"【第 {idx} 段摘要】"
+                                        chunk_summaries.append(f"{header}\n{summary.strip()}")
                                 if chunk_summaries:
                                     compiled_context = "\n\n".join(chunk_summaries)
 
                             undiscussed_topics = []
                             if current_monitor: undiscussed_topics = current_monitor.get_undiscussed_topics()
                             
-                            json_result = await loop.run_in_executor(None, generate_meeting_summary, compiled_context, undiscussed_topics, current_template_type, 0, current_participants)
+                            # 最後一個參數傳入原始逐字稿，讓心智圖時間戳能校正回真實存在的時間。
+                            json_result = await loop.run_in_executor(None, generate_meeting_summary, compiled_context, undiscussed_topics, current_template_type, 0, current_participants, ai_transcript_log)
                             await websocket.send(json.dumps({"type": "summary_result", "data": json_result}))
 
                         except Exception as e: await websocket.send(json.dumps({"type": "error", "message": str(e)}))
