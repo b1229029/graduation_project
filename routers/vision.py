@@ -20,7 +20,7 @@ router = APIRouter(prefix="/vision", tags=["Vision圖片辨識"])
 # 讀取環境變數
 API_KEY = os.getenv("VISION_API_KEY")
 BASE_URL = os.getenv("BASE_URL")
-MODEL = "gpt-5.4-mini"
+MODEL = "gpt-5.6-luna"
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
